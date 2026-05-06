@@ -24,6 +24,7 @@ const (
 	threadStartRequestID = 2
 	turnStartRequestID   = 3
 	maxJSONLineSize      = 10 * 1024 * 1024 // 10MB
+	maxStreamLineSize    = 32 * 1024 * 1024 // 32 MB
 )
 
 var (
@@ -356,12 +357,49 @@ func (r *CodexRunner) Close() error { return nil }
 
 func (r *CodexRunner) streamEventsAndWait(process *codexProcess, reader *bufio.Reader, events chan types.AgentEvent) {
 	defer close(events)
-	scanner := bufio.NewScanner(reader)
-	scanner.Buffer(make([]byte, 0, 64*1024), maxJSONLineSize)
+	var readErr error
 
-	for scanner.Scan() {
-		line := bytes.TrimSpace(scanner.Bytes())
+	for {
+		line, err := reader.ReadBytes('\n')
 		if len(line) == 0 {
+			if err != nil {
+				if !errors.Is(err, io.EOF) {
+					readErr = err
+				}
+				break
+			}
+			continue
+		}
+
+		line = bytes.TrimSuffix(line, []byte{'\n'})
+		if len(line) > maxStreamLineSize {
+			preview := line
+			if len(preview) > 256 {
+				preview = preview[:256]
+			}
+			r.logger.Warn(
+				"codex stream line exceeded maximum size",
+				"event", "maxStreamLineSize_exceeded",
+				"line_bytes", len(line),
+				"max_bytes", maxStreamLineSize,
+				"preview", string(preview),
+			)
+			if err != nil && !errors.Is(err, io.EOF) {
+				readErr = err
+				break
+			}
+			continue
+		}
+
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 {
+			if err != nil && !errors.Is(err, io.EOF) {
+				readErr = err
+				break
+			}
+			if errors.Is(err, io.EOF) {
+				break
+			}
 			continue
 		}
 		msg := map[string]interface{}{}
@@ -387,6 +425,12 @@ func (r *CodexRunner) streamEventsAndWait(process *codexProcess, reader *bufio.R
 		}
 		method, _ := msg["method"].(string)
 		if method == "" {
+			if err != nil {
+				if !errors.Is(err, io.EOF) {
+					readErr = err
+				}
+				break
+			}
 			continue
 		}
 		data := map[string]interface{}{}
@@ -403,9 +447,15 @@ func (r *CodexRunner) streamEventsAndWait(process *codexProcess, reader *bufio.R
 		case events <- event:
 		default:
 		}
+
+		if err != nil {
+			if !errors.Is(err, io.EOF) {
+				readErr = err
+			}
+			break
+		}
 	}
 
-	readErr := scanner.Err()
 	waitErr := process.cmd.Wait()
 	<-process.stderrDone
 	if waitErr != nil {
