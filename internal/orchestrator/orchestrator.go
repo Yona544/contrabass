@@ -463,10 +463,38 @@ func (o *Orchestrator) claimIssue(ctx context.Context, issue types.Issue) error 
 // branch. Caller logs/handles the error and falls back to an empty SHA, which
 // the verifier will treat as "unknown".
 func workspaceHeadSHA(ctx context.Context, workspace string) (string, error) {
-	cmdCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	return workspaceRevParse(ctx, workspace, "HEAD", 2*time.Second)
+}
+
+// verifyBranchAdvanced compares the workspace branch's current HEAD against
+// the claim-time SHA. Git lookup failures fail open so a transient verifier
+// issue does not discard an otherwise successful run.
+func verifyBranchAdvanced(ctx context.Context, workspace, branch, claimHead string) (bool, string, error) {
+	if strings.TrimSpace(claimHead) == "" {
+		return true, "no_claim_head", nil
+	}
+
+	rev := strings.TrimSpace(branch)
+	if rev == "" {
+		rev = "HEAD"
+	}
+
+	currentHead, err := workspaceRevParse(ctx, workspace, rev, 2*time.Second)
+	if err != nil {
+		return true, "git_error", err
+	}
+	if currentHead == strings.TrimSpace(claimHead) {
+		return false, "branch_unchanged", nil
+	}
+
+	return true, "", nil
+}
+
+func workspaceRevParse(ctx context.Context, workspace, rev string, timeout time.Duration) (string, error) {
+	cmdCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	output, err := exec.CommandContext(cmdCtx, "git", "-C", workspace, "rev-parse", "HEAD").Output()
+	output, err := exec.CommandContext(cmdCtx, "git", "-C", workspace, "rev-parse", rev).Output()
 	if err != nil {
 		return "", err
 	}

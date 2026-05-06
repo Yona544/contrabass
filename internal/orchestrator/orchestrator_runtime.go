@@ -82,9 +82,6 @@ func (o *Orchestrator) completeRun(ctx context.Context, issueID string, doneErr 
 	o.mu.Unlock()
 
 	defer entry.cancel()
-	if err := o.workspace.Cleanup(ctx, issueID); err != nil {
-		logging.LogIssueEvent(o.logger, issueID, "workspace_cleanup_failed", "stage", "complete_run", "err", err)
-	}
 
 	finalAttempt := entry.attempt
 	successSignal := completionSignalFromEvent(finalAttempt.LastEvent)
@@ -109,6 +106,36 @@ func (o *Orchestrator) completeRun(ctx context.Context, issueID string, doneErr 
 			Error:     finalAttempt.Error,
 		},
 	})
+
+	if finalAttempt.Phase == types.Succeeded {
+		advanced, reason, err := verifyBranchAdvanced(
+			ctx, finalAttempt.WorkspacePath, entry.issue.BranchName, finalAttempt.ClaimHeadSha)
+		switch {
+		case advanced && reason == "":
+		case !advanced && reason == "branch_unchanged":
+			logging.LogIssueEvent(o.logger, issueID,
+				"success_unverified_branch_unchanged",
+				"attempt", finalAttempt.Attempt,
+				"branch", entry.issue.BranchName,
+				"head", finalAttempt.ClaimHeadSha,
+			)
+			o.enqueueContinuation(issueID, finalAttempt.Attempt,
+				"success_unverified_branch_unchanged")
+			return
+		default:
+			if err != nil {
+				o.logger.Warn("verifier_skipped",
+					"issue_id", issueID, "reason", reason, "err", err)
+			} else {
+				o.logger.Warn("verifier_skipped",
+					"issue_id", issueID, "reason", reason)
+			}
+		}
+	}
+
+	if err := o.workspace.Cleanup(ctx, issueID); err != nil {
+		logging.LogIssueEvent(o.logger, issueID, "workspace_cleanup_failed", "stage", "complete_run", "err", err)
+	}
 
 	// Post completion comment (best-effort)
 	commentBody := fmt.Sprintf(
