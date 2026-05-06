@@ -150,7 +150,17 @@ func createRunner(cfg *config.WorkflowConfig, teamName string, logger *slog.Logg
 		if codexBin == "" {
 			codexBin = cfg.CodexBinaryPath()
 		}
-		return agent.NewCodexRunner(codexBin, 30*time.Second), nil
+		runner := agent.NewCodexRunner(codexBin, 30*time.Second)
+		// Forward workflow-driven codex config so the spawned `codex app-server`
+		// uses the workflow's model/approval_policy/sandbox instead of silently
+		// inheriting whatever is in ~/.codex/config.toml. Empty fields are not
+		// injected — codex falls back to its own defaults.
+		runner.ConfigureCodex(agent.CodexRunnerOptions{
+			Model:          cfg.Codex.Model,
+			ApprovalPolicy: cfg.Codex.ApprovalPolicy,
+			Sandbox:        cfg.Codex.Sandbox,
+		})
+		return runner, nil
 	case "opencode":
 		opencodeBin := os.Getenv("OPENCODE_BINARY")
 		if opencodeBin == "" {

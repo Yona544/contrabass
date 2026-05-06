@@ -646,3 +646,66 @@ func writeJSON(t *testing.T, writer *bufio.Writer, v map[string]interface{}) {
 	require.NoError(t, err)
 	require.NoError(t, writer.Flush())
 }
+
+// TestCodexRunner_BuildConfigOverrideArgs covers the contract between the
+// workflow's codex.* fields and the `-c key=value` arguments that contrabass
+// appends when spawning `codex app-server`. Without this plumbing, workflow
+// settings were silently dropped and codex inherited whatever lived in the
+// operator's ~/.codex/config.toml.
+func TestCodexRunner_BuildConfigOverrideArgs(t *testing.T) {
+	cases := []struct {
+		name string
+		opts CodexRunnerOptions
+		want []string
+	}{
+		{
+			name: "empty options produce no args",
+			opts: CodexRunnerOptions{},
+			want: nil,
+		},
+		{
+			name: "model only",
+			opts: CodexRunnerOptions{Model: "gpt-5-codex"},
+			want: []string{"-c", `model="gpt-5-codex"`},
+		},
+		{
+			name: "all three fields, in canonical order",
+			opts: CodexRunnerOptions{
+				Model:          "gpt-5-codex",
+				ApprovalPolicy: "never",
+				Sandbox:        "workspace-write",
+			},
+			want: []string{
+				"-c", `model="gpt-5-codex"`,
+				"-c", `approval_policy="never"`,
+				"-c", `sandbox_mode="workspace-write"`,
+			},
+		},
+		{
+			name: "whitespace-only fields are skipped",
+			opts: CodexRunnerOptions{Model: "  ", ApprovalPolicy: "never", Sandbox: ""},
+			want: []string{"-c", `approval_policy="never"`},
+		},
+		{
+			name: "values with spaces are quoted",
+			opts: CodexRunnerOptions{Model: "gpt 5 codex"},
+			want: []string{"-c", `model="gpt 5 codex"`},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := NewCodexRunner("codex app-server", 5*time.Second)
+			r.ConfigureCodex(c.opts)
+			assert.Equal(t, c.want, r.buildConfigOverrideArgs())
+		})
+	}
+}
+
+// TestCodexRunner_ConfigureCodex_Chains checks that ConfigureCodex returns the
+// receiver so call sites can chain it onto NewCodexRunner.
+func TestCodexRunner_ConfigureCodex_Chains(t *testing.T) {
+	base := NewCodexRunner("codex app-server", 5*time.Second)
+	chained := base.ConfigureCodex(CodexRunnerOptions{Model: "gpt-5-codex"})
+	assert.Same(t, base, chained, "ConfigureCodex must return the same runner pointer")
+	assert.Equal(t, "gpt-5-codex", base.options.Model)
+}

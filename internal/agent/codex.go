@@ -35,9 +35,22 @@ type CodexRunner struct {
 	binaryPath string
 	timeout    time.Duration
 	logger     *log.Logger
+	options    CodexRunnerOptions
 
 	mu    sync.Mutex
 	procs map[int]*codexProcess
+}
+
+// CodexRunnerOptions captures workflow-driven settings that contrabass forwards
+// to `codex app-server` as `-c key=value` overrides. Empty strings are skipped
+// so codex falls back to whatever is in `~/.codex/config.toml`. The keys are
+// codex TOML config paths — values are passed through unchanged, so callers
+// must use values codex accepts (e.g. `model="gpt-5-codex"`,
+// `approval_policy="never"`, `sandbox_mode="workspace-write"`).
+type CodexRunnerOptions struct {
+	Model          string
+	ApprovalPolicy string
+	Sandbox        string
 }
 
 type codexProcess struct {
@@ -87,11 +100,37 @@ func NewCodexRunner(binaryPath string, timeout time.Duration) *CodexRunner {
 	}
 }
 
+// ConfigureCodex attaches workflow-driven codex config that the runner will
+// forward as `-c key=value` overrides each time it spawns the agent process.
+// Returns the receiver to allow chaining. Empty fields are skipped.
+func (r *CodexRunner) ConfigureCodex(opts CodexRunnerOptions) *CodexRunner {
+	r.options = opts
+	return r
+}
+
+// buildConfigOverrideArgs renders CodexRunnerOptions into a flat `-c key=value`
+// argument list. TOML strings are double-quoted as expected by `codex -c`.
+func (r *CodexRunner) buildConfigOverrideArgs() []string {
+	var args []string
+	add := func(key, value string) {
+		v := strings.TrimSpace(value)
+		if v == "" {
+			return
+		}
+		args = append(args, "-c", fmt.Sprintf("%s=%q", key, v))
+	}
+	add("model", r.options.Model)
+	add("approval_policy", r.options.ApprovalPolicy)
+	add("sandbox_mode", r.options.Sandbox)
+	return args
+}
+
 func (r *CodexRunner) Start(ctx context.Context, issue types.Issue, workspace string, prompt string) (*AgentProcess, error) {
 	argv := strings.Fields(strings.TrimSpace(r.binaryPath))
 	if len(argv) == 0 {
 		return nil, errors.New("codex binary path is empty")
 	}
+	argv = append(argv, r.buildConfigOverrideArgs()...)
 
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Dir = workspace
