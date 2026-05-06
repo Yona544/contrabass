@@ -22,6 +22,7 @@ import (
 var (
 	errTeamCLIAlreadyStopped = errors.New("team CLI process already stopped")
 	errTeamCLIStopFailed     = errors.New("team CLI stop failed")
+	errTeamMissing           = errors.New("team CLI team missing")
 )
 
 type teamCLIRunner struct {
@@ -57,6 +58,7 @@ type teamCLIProcess struct {
 	done       chan error
 	finished   chan struct{}
 	cancel     context.CancelFunc
+	missing    atomic.Bool
 	finishOnce sync.Once
 	removeOnce sync.Once
 }
@@ -64,6 +66,7 @@ type teamCLIProcess struct {
 type teamCLIEnvelope struct {
 	OK        bool            `json:"ok"`
 	Operation string          `json:"operation"`
+	Status    string          `json:"status"`
 	Data      json.RawMessage `json:"data"`
 	Error     *teamCLIError   `json:"error"`
 }
@@ -214,7 +217,9 @@ func (r *teamCLIRunner) Start(ctx context.Context, issue types.Issue, workspace 
 
 	initialSnapshot, err := r.waitForTeamReady(startCtx, workspace, teamName)
 	if err != nil {
-		_ = r.shutdownTeam(context.Background(), workspace, teamName)
+		if !errors.Is(err, errTeamMissing) {
+			_ = r.shutdownTeam(context.Background(), workspace, teamName)
+		}
 		return nil, fmt.Errorf("wait for %s team %q readiness: %w", r.name, teamName, err)
 	}
 
@@ -271,6 +276,10 @@ func (r *teamCLIRunner) Stop(proc *AgentProcess) error {
 
 	state.cancel()
 	state.remove(r)
+
+	if state.missing.Load() {
+		return nil
+	}
 
 	// Try graceful shutdown first with a short budget, then force-stop
 	// with its own independent timeout so an expired grace period cannot
@@ -361,6 +370,10 @@ func (r *teamCLIRunner) monitorProcess(ctx context.Context, proc *teamCLIProcess
 		}
 		proc.finish(err)
 	}
+	finishMissing := func(err error) {
+		proc.missing.Store(true)
+		proc.finish(err)
+	}
 
 	emit("turn/started", map[string]interface{}{
 		"team_name":   proc.teamName,
@@ -386,6 +399,8 @@ func (r *teamCLIRunner) monitorProcess(ctx context.Context, proc *teamCLIProcess
 		lastTaskStatus string
 		seenStarted    bool
 		errorCount     int
+		missingCount   int
+		missingEmitted bool
 		pollCount      int
 	)
 
@@ -478,6 +493,22 @@ func (r *teamCLIRunner) monitorProcess(ctx context.Context, proc *teamCLIProcess
 		case <-ticker.C:
 			snapshot, err := r.fetchSnapshot(ctx, proc.workspace, proc.teamName)
 			if err != nil {
+				if isTeamMissingError(err) {
+					missingCount++
+					if missingCount >= 2 {
+						if !missingEmitted {
+							emit("team/missing", map[string]interface{}{
+								"team_name": proc.teamName,
+								"error":     errTeamMissing.Error(),
+							})
+							missingEmitted = true
+						}
+						finishMissing(errTeamMissing)
+						return
+					}
+					continue
+				}
+				missingCount = 0
 				errorCount++
 				emit("protocol/error", map[string]interface{}{
 					"team_name": proc.teamName,
@@ -489,6 +520,7 @@ func (r *teamCLIRunner) monitorProcess(ctx context.Context, proc *teamCLIProcess
 				}
 				continue
 			}
+			missingCount = 0
 			errorCount = 0
 			if done, err := handleSnapshot(snapshot); done {
 				finish(err)
@@ -551,6 +583,9 @@ func (r *teamCLIRunner) runTeamAPI(ctx context.Context, workspace, operation str
 	if err := json.Unmarshal(output, &envelope); err != nil {
 		return fmt.Errorf("decode %s team api %s response: %w", r.name, operation, err)
 	}
+	if envelope.Status == "missing" {
+		return errTeamMissing
+	}
 	if !envelope.OK {
 		if envelope.Error != nil {
 			return envelope.Error
@@ -575,6 +610,17 @@ func (r *teamCLIRunner) runCommand(ctx context.Context, workspace string, args .
 	cmd := exec.CommandContext(ctx, argv[0], append(argv[1:], args...)...)
 	cmd.Dir = workspace
 	return cmd.CombinedOutput()
+}
+
+func isTeamMissingError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, errTeamMissing) {
+		return true
+	}
+	var apiErr *teamCLIError
+	return errors.As(err, &apiErr) && apiErr.Code == "team_not_found"
 }
 
 func buildTeamTaskSeed(issue types.Issue, prompt string) string {
