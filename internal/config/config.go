@@ -43,7 +43,6 @@ const (
 	defaultLocalIssuePrefix    = "CB"
 
 	defaultOhMyOpenCodePluginVersion = "oh-my-opencode"
-	defaultOhMyOpenCodeAgentModel    = "anthropic/claude-sonnet-4-6"
 
 	defaultTeamMaxWorkers        = 5
 	defaultTeamMaxFixLoops       = 3
