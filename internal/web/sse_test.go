@@ -135,6 +135,41 @@ func TestHandleSSEFiltersHeartbeatsAndRoutesQueueEvents(t *testing.T) {
 	assert.Contains(t, frameText, "ZII-49")
 }
 
+func TestSSE_FiltersHeartbeats(t *testing.T) {
+	tests := []struct {
+		name        string
+		event       WebEvent
+		wantChannel string
+		wantWrite   bool
+	}{
+		{
+			name:      "heartbeat dropped",
+			event:     WebEvent{Kind: WebEventTeam, Type: "team/stalled"},
+			wantWrite: false,
+		},
+		{
+			name:        "queue routed",
+			event:       WebEvent{Kind: WebEventOrchestrator, Type: "dispatch_skipped_blocked_by"},
+			wantChannel: "queue",
+			wantWrite:   true,
+		},
+		{
+			name:        "tool call preserved",
+			event:       WebEvent{Kind: WebEventTeam, Type: "tool_call"},
+			wantChannel: "tool_call",
+			wantWrite:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			channel, ok := sseEventChannel(tt.event)
+			assert.Equal(t, tt.wantWrite, ok)
+			assert.Equal(t, tt.wantChannel, channel)
+		})
+	}
+}
+
 func TestHandleSSESkipsStaleBufferedEventsAfterSnapshot(t *testing.T) {
 	now := time.Now().UTC()
 	provider := fakeSnapshotProvider{snapshot: orchestrator.StateSnapshot{
