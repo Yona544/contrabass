@@ -74,7 +74,11 @@ func TestOMXRunner_StartStopLifecycle(t *testing.T) {
 	assert.Contains(t, logged, "team shutdown "+proc.SessionID+" --force")
 }
 
-func TestOMXRunner_RalphShutdown(t *testing.T) {
+// TestOMXRunner_RalphFlagIsDeprecatedNoOp pins down that omx v0.16+ no longer
+// accepts the inline `omx team ralph ...` form, so OMXConfig.Ralph=true must
+// be ignored when launching/shutting down a team. Ralph cycles must be invoked
+// separately via `omx ralph ...`.
+func TestOMXRunner_RalphFlagIsDeprecatedNoOp(t *testing.T) {
 	workspace := t.TempDir()
 	logPath := filepath.Join(workspace, "omx-ralph.log")
 	server := newFakeTeamCLIServer(t, logPath)
@@ -89,14 +93,17 @@ func TestOMXRunner_RalphShutdown(t *testing.T) {
 	}
 	runner := NewOMXRunner(cfg, time.Second)
 
-	proc, err := runner.Start(context.Background(), types.Issue{ID: "CB-102", Title: "Ralph mode"}, workspace, "Handle shutdown")
+	proc, err := runner.Start(context.Background(), types.Issue{ID: "CB-102", Title: "ralph deprecated"}, workspace, "Handle shutdown")
 	require.NoError(t, err)
 	require.NoError(t, runner.Stop(proc))
 
 	logData, err := os.ReadFile(logPath)
 	require.NoError(t, err)
-	assert.Contains(t, string(logData), "team ralph 1:executor")
-	assert.Contains(t, string(logData), "team shutdown "+proc.SessionID+" --force --ralph")
+	logged := string(logData)
+	assert.NotContains(t, logged, "team ralph 1:executor", "ralph subcommand must not be threaded into team launch")
+	assert.NotContains(t, logged, "--ralph", "ralph flag must not be threaded into shutdown")
+	assert.Contains(t, logged, "team 1:executor")
+	assert.Contains(t, logged, "team shutdown "+proc.SessionID+" --force")
 }
 
 func TestOMXRunner_FailedTask(t *testing.T) {
