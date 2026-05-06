@@ -33,12 +33,15 @@ type ConfigProvider interface {
 }
 
 type runEntry struct {
-	issue       types.Issue
-	attempt     types.RunAttempt
-	process     *agent.AgentProcess
-	cancel      context.CancelFunc
-	workspace   string
-	lastEventAt time.Time
+	issue            types.Issue
+	attempt          types.RunAttempt
+	process          *agent.AgentProcess
+	cancel           context.CancelFunc
+	workspace        string
+	lastEventAt      time.Time
+	lastActivityAt   time.Time
+	lastActivityKind string
+	lastHeartbeatAt  time.Time
 }
 
 type Stats struct {

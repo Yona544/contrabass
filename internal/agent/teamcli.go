@@ -25,6 +25,20 @@ var (
 	errTeamMissing           = errors.New("team CLI team missing")
 )
 
+var heartbeatEventTypes = map[string]struct{}{
+	"team/stalled": {},
+}
+
+func isHeartbeatEvent(t string) bool {
+	_, ok := heartbeatEventTypes[t]
+	return ok
+}
+
+// IsHeartbeatEvent reports whether an agent event is a liveness heartbeat.
+func IsHeartbeatEvent(t string) bool {
+	return isHeartbeatEvent(t)
+}
+
 type teamCLIRunner struct {
 	name           string
 	binaryPath     string

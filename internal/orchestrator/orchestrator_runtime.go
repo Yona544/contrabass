@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/junhoyeo/contrabass/internal/agent"
 	"github.com/junhoyeo/contrabass/internal/config"
 	"github.com/junhoyeo/contrabass/internal/logging"
 	"github.com/junhoyeo/contrabass/internal/types"
@@ -36,7 +37,12 @@ func (o *Orchestrator) handleAgentEvent(issueID string, event types.AgentEvent) 
 	}
 
 	entry.lastEventAt = event.Timestamp
+	entry.lastHeartbeatAt = event.Timestamp
 	entry.attempt.LastEvent = event.Type
+	if !agent.IsHeartbeatEvent(event.Type) {
+		entry.lastActivityAt = event.Timestamp
+		entry.lastActivityKind = event.Type
+	}
 
 	if entry.attempt.Phase == types.InitializingSession {
 		if err := TransitionRunPhase(entry.attempt.Phase, types.StreamingTurn); err == nil {

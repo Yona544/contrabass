@@ -52,17 +52,20 @@ func (o *Orchestrator) Snapshot() StateSnapshot {
 	runningEntries := make([]RunningEntry, 0, len(o.running))
 	for _, entry := range o.running {
 		runningEntries = append(runningEntries, RunningEntry{
-			IssueID:    entry.issue.ID,
-			Attempt:    entry.attempt.Attempt,
-			PID:        entry.attempt.PID,
-			SessionID:  entry.attempt.SessionID,
-			Workspace:  entry.workspace,
-			StartedAt:  entry.attempt.StartTime,
-			Phase:      entry.attempt.Phase,
-			PhaseLabel: entry.attempt.Phase.Label(),
-			TokensIn:   entry.attempt.TokensIn,
-			TokensOut:  entry.attempt.TokensOut,
-			DiffStatus: "ok",
+			IssueID:          entry.issue.ID,
+			Attempt:          entry.attempt.Attempt,
+			PID:              entry.attempt.PID,
+			SessionID:        entry.attempt.SessionID,
+			Workspace:        entry.workspace,
+			StartedAt:        entry.attempt.StartTime,
+			Phase:            entry.attempt.Phase,
+			PhaseLabel:       entry.attempt.Phase.Label(),
+			TokensIn:         entry.attempt.TokensIn,
+			TokensOut:        entry.attempt.TokensOut,
+			LastActivityAt:   formatSnapshotTime(entry.lastActivityAt),
+			LastActivityKind: entry.lastActivityKind,
+			LastHeartbeatAt:  formatSnapshotTime(entry.lastHeartbeatAt),
+			DiffStatus:       "ok",
 		})
 	}
 
@@ -87,4 +90,11 @@ func (o *Orchestrator) Snapshot() StateSnapshot {
 		Issues:      issuesCopy,
 		GeneratedAt: generatedAt,
 	}
+}
+
+func formatSnapshotTime(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
 }
