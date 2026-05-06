@@ -2,7 +2,10 @@ package orchestrator
 
 import (
 	"context"
+	"encoding/json"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -99,6 +102,9 @@ func (o *Orchestrator) Snapshot() StateSnapshot {
 		runningEntries[i].DiffRemoved = removed
 		runningEntries[i].DiffFiles = files
 		runningEntries[i].DiffStatus = status
+		iteration, max := readIterationProgress(runningEntries[i].Workspace)
+		runningEntries[i].Iteration = iteration
+		runningEntries[i].IterationMax = max
 	}
 
 	generatedAt := time.Now()
@@ -133,6 +139,26 @@ func diffStat(ctx context.Context, workspace string) (added, removed, files int,
 
 	added, removed, files = parseDiffShortstat(string(output))
 	return added, removed, files, "ok"
+}
+
+// readIterationProgress returns iteration progress from an omx run-state file.
+// Missing or malformed files return zeroes because non-omx runners do not
+// produce this optional state.
+func readIterationProgress(workspace string) (iteration, max int) {
+	path := filepath.Join(workspace, ".omx", "state", "run-state.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, 0
+	}
+
+	var state struct {
+		Iteration     int `json:"iteration"`
+		MaxIterations int `json:"max_iterations"`
+	}
+	if err := json.Unmarshal(data, &state); err != nil {
+		return 0, 0
+	}
+	return state.Iteration, state.MaxIterations
 }
 
 func parseDiffShortstat(output string) (added, removed, files int) {
