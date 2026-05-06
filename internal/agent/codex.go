@@ -50,7 +50,7 @@ type CodexRunner struct {
 type CodexRunnerOptions struct {
 	Model          string
 	ApprovalPolicy string
-	Sandbox        string
+	Sandbox        interface{}
 }
 
 type codexProcess struct {
@@ -121,8 +121,37 @@ func (r *CodexRunner) buildConfigOverrideArgs() []string {
 	}
 	add("model", r.options.Model)
 	add("approval_policy", r.options.ApprovalPolicy)
-	add("sandbox_mode", r.options.Sandbox)
+	if sandbox, ok := r.options.Sandbox.(string); ok {
+		add("sandbox_mode", sandbox)
+	}
 	return args
+}
+
+// policyParams returns the approvalPolicy and sandboxPolicy values that
+// thread/start and turn/start must carry. Workflow override wins; otherwise
+// hardcoded defaults are returned.
+func (r *CodexRunner) policyParams() (approval string, sandbox interface{}) {
+	approval = strings.TrimSpace(r.options.ApprovalPolicy)
+	if approval == "" {
+		approval = "never"
+	}
+
+	sandbox = map[string]interface{}{
+		"type":          "workspaceWrite",
+		"networkAccess": false,
+	}
+	switch value := r.options.Sandbox.(type) {
+	case string:
+		if strings.TrimSpace(value) != "" {
+			sandbox = value
+		}
+	case map[string]interface{}:
+		if value != nil {
+			sandbox = value
+		}
+	}
+
+	return approval, sandbox
 }
 
 func (r *CodexRunner) Start(ctx context.Context, issue types.Issue, workspace string, prompt string) (*AgentProcess, error) {
@@ -175,6 +204,7 @@ func (r *CodexRunner) Start(ctx context.Context, issue types.Issue, workspace st
 
 	writer := bufio.NewWriter(stdin)
 	reader := bufio.NewReader(stdout)
+	approvalPolicy, sandboxPolicy := r.policyParams()
 
 	if err := r.sendMessage(writer, map[string]interface{}{
 		"id":     initializeRequestID,
@@ -209,7 +239,9 @@ func (r *CodexRunner) Start(ctx context.Context, issue types.Issue, workspace st
 		"id":     threadStartRequestID,
 		"method": "thread/start",
 		"params": map[string]interface{}{
-			"cwd": workspace,
+			"cwd":            workspace,
+			"approvalPolicy": approvalPolicy,
+			"sandboxPolicy":  sandboxPolicy,
 		},
 	}); err != nil {
 		r.cleanupOnStartFailure(process)
@@ -231,9 +263,11 @@ func (r *CodexRunner) Start(ctx context.Context, issue types.Issue, workspace st
 		"id":     turnStartRequestID,
 		"method": "turn/start",
 		"params": map[string]interface{}{
-			"threadId": threadID,
-			"cwd":      workspace,
-			"title":    fmt.Sprintf("%s: %s", issue.ID, issue.Title),
+			"threadId":       threadID,
+			"cwd":            workspace,
+			"approvalPolicy": approvalPolicy,
+			"sandboxPolicy":  sandboxPolicy,
+			"title":          fmt.Sprintf("%s: %s", issue.ID, issue.Title),
 			"input": []map[string]interface{}{{
 				"type": "text",
 				"text": prompt,
