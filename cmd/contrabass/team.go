@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"os/signal"
 	"syscall"
 	"time"
@@ -130,10 +131,19 @@ func createRunner(cfg *config.WorkflowConfig, teamName string, logger *slog.Logg
 		eventLogger := team.NewEventLogger(paths)
 		dispatchQueue := team.NewDispatchQueue(store, paths, time.Duration(cfg.TeamClaimLeaseSeconds())*time.Second)
 
+		// For tmux mode the CLIRegistry already knows the subcommand (e.g.
+		// "app-server" for codex). If the user wrote "codex app-server" in
+		// workflow.codex.binary_path we must extract just "codex" so the
+		// registry's BuildArgs don't duplicate the subcommand.
+		binaryPath := binaryPathForAgent(cfg)
+		if fields := strings.Fields(binaryPath); len(fields) > 1 {
+			binaryPath = fields[0]
+		}
+
 		return agent.NewTmuxRunner(agent.TmuxRunnerConfig{
 			TeamName:         teamName,
 			AgentType:        cfg.AgentType(),
-			BinaryPath:       binaryPathForAgent(cfg),
+			BinaryPath:       binaryPath,
 			Session:          session,
 			Registry:         registry,
 			HeartbeatMonitor: heartbeat,
