@@ -40,3 +40,5 @@ Thumbs.db
 .sisyphus/
 .omc/
 .omx/
+.contrabass/runner/
+.contrabass/state/
