@@ -14,6 +14,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -44,6 +47,7 @@ type observingTracker struct {
 	states        map[string]types.IssueState
 	claims        map[string]int
 	releases      map[string]int
+	updateCounts  map[string]map[types.IssueState]int
 	currentClaims map[string]bool
 }
 
@@ -63,6 +67,7 @@ func newObservingTracker(issues []types.Issue) *observingTracker {
 		states:        states,
 		claims:        make(map[string]int),
 		releases:      make(map[string]int),
+		updateCounts:  make(map[string]map[types.IssueState]int),
 		currentClaims: make(map[string]bool),
 	}
 }
@@ -118,6 +123,10 @@ func (t *observingTracker) UpdateIssueState(ctx context.Context, issueID string,
 
 	t.mu.Lock()
 	t.states[issueID] = state
+	if t.updateCounts[issueID] == nil {
+		t.updateCounts[issueID] = make(map[types.IssueState]int)
+	}
+	t.updateCounts[issueID][state]++
 	t.mu.Unlock()
 
 	return nil
@@ -139,6 +148,13 @@ func (t *observingTracker) ReleaseCount(issueID string) int {
 	defer t.mu.Unlock()
 
 	return t.releases[issueID]
+}
+
+func (t *observingTracker) UpdateIssueStateCount(issueID string, state types.IssueState) int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	return t.updateCounts[issueID][state]
 }
 
 func (t *observingTracker) State(issueID string) (types.IssueState, bool) {
@@ -239,6 +255,23 @@ func (c *eventCollector) Event(eventType EventType, issueID string) (Orchestrato
 	return OrchestratorEvent{}, false
 }
 
+func (c *eventCollector) BackoffCauseCount(issueID, cause string) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	count := 0
+	for _, event := range c.events {
+		if event.Type != EventBackoffEnqueued || event.IssueID != issueID {
+			continue
+		}
+		backoff, ok := event.Data.(BackoffEnqueued)
+		if ok && strings.Contains(backoff.Error, cause) {
+			count++
+		}
+	}
+	return count
+}
+
 func assertIssueReleasedTimestampPrecedesBackoff(t *testing.T, events *eventCollector, issueID string) {
 	t.Helper()
 
@@ -310,6 +343,71 @@ func (w *countingWorkspace) CleanupAllCount() int {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.cleanupAllCalls
+}
+
+type gitWorkspaceManager struct {
+	base *workspace.MockManager
+	t    *testing.T
+}
+
+func newGitWorkspaceManager(t *testing.T, baseDir string) *gitWorkspaceManager {
+	t.Helper()
+
+	return &gitWorkspaceManager{
+		base: workspace.NewMockManager(baseDir),
+		t:    t,
+	}
+}
+
+func (w *gitWorkspaceManager) Create(ctx context.Context, issue types.Issue) (string, error) {
+	path, err := w.base.Create(ctx, issue)
+	if err != nil {
+		return "", err
+	}
+	if _, err := os.Stat(filepath.Join(path, ".git")); err == nil {
+		return path, nil
+	}
+
+	require.NoError(w.t, os.MkdirAll(path, 0o755))
+	gitRun(w.t, path, "init")
+	require.NoError(w.t, os.WriteFile(filepath.Join(path, "baseline.txt"), []byte("baseline\n"), 0o644))
+	gitRun(w.t, path, "add", "baseline.txt")
+	gitRun(w.t, path, "commit", "-m", "baseline")
+	if issue.BranchName != "" {
+		gitRun(w.t, path, "checkout", "-B", issue.BranchName)
+	}
+	return path, nil
+}
+
+func (w *gitWorkspaceManager) Cleanup(ctx context.Context, issueID string) error {
+	return w.base.Cleanup(ctx, issueID)
+}
+
+func (w *gitWorkspaceManager) CleanupAll(ctx context.Context) error {
+	return w.base.CleanupAll(ctx)
+}
+
+type commitBeforeSuccessRunner struct {
+	t    *testing.T
+	base *agent.MockRunner
+}
+
+func (r *commitBeforeSuccessRunner) Start(
+	ctx context.Context,
+	issue types.Issue,
+	workspacePath string,
+	prompt string,
+) (*agent.AgentProcess, error) {
+	gitRun(r.t, workspacePath, "commit", "--allow-empty", "-m", "agent progress")
+	return r.base.Start(ctx, issue, workspacePath, prompt)
+}
+
+func (r *commitBeforeSuccessRunner) Stop(proc *agent.AgentProcess) error {
+	return r.base.Stop(proc)
+}
+
+func (r *commitBeforeSuccessRunner) Close() error {
+	return r.base.Close()
 }
 
 var _ agent.AgentRunner = (*trackingRunner)(nil)
@@ -536,6 +634,84 @@ func TestNoEventSuccessResolvesToSucceeded(t *testing.T) {
 
 	cancel()
 	require.NoError(t, <-done)
+}
+
+func TestSuccessGate_HollowRunReroutesToBackoff(t *testing.T) {
+	const rejectionCause = "success_unverified_branch_unchanged"
+
+	tests := []struct {
+		name                 string
+		issueID              string
+		runner               func(t *testing.T) agent.AgentRunner
+		wantReleased         bool
+		wantRejectionBackoff bool
+	}{
+		{
+			name:    "hollow success rejected",
+			issueID: "ISS-HOLLOW",
+			runner: func(t *testing.T) agent.AgentRunner {
+				t.Helper()
+				return &agent.MockRunner{
+					Events: []types.AgentEvent{{Type: "turn/completed"}},
+					Delay:  10 * time.Millisecond,
+				}
+			},
+			wantRejectionBackoff: true,
+		},
+		{
+			name:    "real success proceeds",
+			issueID: "ISS-REAL",
+			runner: func(t *testing.T) agent.AgentRunner {
+				t.Helper()
+				return &commitBeforeSuccessRunner{
+					t: t,
+					base: &agent.MockRunner{
+						Events: []types.AgentEvent{{Type: "turn/completed"}},
+						Delay:  10 * time.Millisecond,
+					},
+				}
+			},
+			wantReleased: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			issue := types.Issue{
+				ID:         tt.issueID,
+				Identifier: tt.issueID,
+				Title:      tt.name,
+				State:      types.Unclaimed,
+				BranchName: tt.issueID,
+			}
+			mt := newObservingTracker([]types.Issue{issue})
+			mw := newGitWorkspaceManager(t, t.TempDir())
+			cfg := testConfig()
+			cfg.MaxRetryBackoffMsRaw = 5_000
+			orch := NewOrchestrator(mt, mw, tt.runner(t), &staticConfig{cfg: cfg}, nil)
+			events := newEventCollector(orch.Events())
+
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			done := startOrchestrator(ctx, orch)
+
+			if tt.wantReleased {
+				require.Eventually(t, func() bool {
+					return mt.UpdateIssueStateCount(issue.ID, types.Released) >= 1
+				}, 2*time.Second, 10*time.Millisecond)
+				assert.Zero(t, events.BackoffCauseCount(issue.ID, rejectionCause))
+			}
+			if tt.wantRejectionBackoff {
+				require.Eventually(t, func() bool {
+					return events.BackoffCauseCount(issue.ID, rejectionCause) == 1
+				}, 2*time.Second, 10*time.Millisecond)
+				assert.Zero(t, mt.UpdateIssueStateCount(issue.ID, types.Released))
+			}
+
+			cancel()
+			require.NoError(t, <-done)
+		})
+	}
 }
 
 func TestFailedAgentBackoff(t *testing.T) {
@@ -1413,8 +1589,8 @@ func TestDispatchUnclaimedIssues_GatesOnBlockedBy(t *testing.T) {
 		})
 		mw := workspace.NewMockManager(t.TempDir())
 		mr := &agent.MockRunner{
-			Events: []types.AgentEvent{},  // never completes naturally
-			Delay:  10 * time.Second,      // hold the agent open while we observe
+			Events: []types.AgentEvent{}, // never completes naturally
+			Delay:  10 * time.Second,     // hold the agent open while we observe
 		}
 		cfg := &staticConfig{cfg: testConfig()}
 		orch := NewOrchestrator(mt, mw, mr, cfg, nil)
