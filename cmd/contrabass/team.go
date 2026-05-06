@@ -117,7 +117,15 @@ func createRunner(cfg *config.WorkflowConfig, teamName string, logger *slog.Logg
 		return nil, fmt.Errorf("invalid worker mode configuration: %w", err)
 	}
 
-	if cfg.WorkerMode() == "tmux" {
+	// Codex speaks JSONL over stdin/stdout and needs its own runner for the
+	// initialize → thread/start → turn/start protocol. TmuxRunner cannot
+	// drive this interaction, so codex always uses CodexRunner regardless of
+	// worker_mode. Other agents (opencode, omx, omc, oh-my-opencode) can run
+	// inside tmux panes because they are long-running servers or CLI tools
+	// that accept a file/arg prompt.
+	if cfg.AgentType() == "codex" || cfg.WorkerMode() != "tmux" {
+		// Fall through to the per-agent-type switch below.
+	} else if cfg.WorkerMode() == "tmux" {
 		if !tmux.IsTmuxAvailable(context.Background(), nil) {
 			return nil, errors.New("tmux worker mode requested, but tmux is not available in PATH")
 		}
