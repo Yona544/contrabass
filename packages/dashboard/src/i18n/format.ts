@@ -5,17 +5,17 @@ const LOCALE = 'zh-CN'
 const DASH = '-'
 
 const PHASE_LABELS: Record<number, string> = {
-  0: '准备工作区',
-  1: '构建提示词',
-  2: '启动代理进程',
-  3: '初始化会话',
-  4: '流式执行',
-  5: '收尾',
-  6: '成功',
-  7: '失败',
-  8: '超时',
-  9: '停滞',
-  10: '已被协调取消',
+  0: 'PreparingWorkspace',
+  1: 'PreparingWorkspace',
+  2: 'RunningAgent',
+  3: 'RunningAgent',
+  4: 'AgentRunning',
+  5: 'Releasing',
+  6: 'Done',
+  7: 'Failed',
+  8: 'Failed',
+  9: 'Failed',
+  10: 'Canceled',
 }
 
 const ISSUE_STATE_LABELS: Record<string, string> = {
@@ -61,6 +61,33 @@ export function formatElapsedSince(timestamp: string, nowMs = Date.now()): strin
   }
 
   return formatDuration(Math.floor(Math.max(0, nowMs - started) / 1000))
+}
+
+export function formatRelativeTime(timestamp: string, nowMs = Date.now()): string {
+  const parsed = Date.parse(timestamp)
+  if (Number.isNaN(parsed)) {
+    return zhCN.sessions.relative.unknown
+  }
+
+  const seconds = Math.floor(Math.max(0, nowMs - parsed) / 1000)
+  if (seconds < 1) {
+    return zhCN.sessions.relative.justNow
+  }
+  if (seconds < 60) {
+    return zhCN.sessions.relative.secondsAgo(seconds)
+  }
+
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) {
+    return zhCN.sessions.relative.minutesAgo(minutes)
+  }
+
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) {
+    return zhCN.sessions.relative.hoursAgo(hours)
+  }
+
+  return zhCN.sessions.relative.daysAgo(Math.floor(hours / 24))
 }
 
 export function formatDateTime(value: string): string {

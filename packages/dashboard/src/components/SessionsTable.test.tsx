@@ -4,8 +4,35 @@ import '@testing-library/jest-dom'
 import type { RunningEntry } from '../types'
 import { SessionsTable } from './SessionsTable'
 
+type TableEntry = RunningEntry & {
+  phase_label?: string
+  last_activity_at?: string
+  last_activity_kind?: string
+  iteration?: number
+  iteration_max?: number
+  diff_added?: number
+  diff_removed?: number
+  diff_files?: number
+  diff_status?: string
+}
+
 function expectInDocument(value: unknown) {
   ;(expect(value) as any).toBeInTheDocument()
+}
+
+function createEntry(overrides: Partial<TableEntry> = {}): TableEntry {
+  return {
+    issue_id: 'ISSUE-100',
+    attempt: 1,
+    pid: 1234,
+    session_id: 'abcdef1234567890',
+    workspace: '/tmp/one',
+    started_at: '2026-03-05T10:00:00.000Z',
+    phase: 4,
+    tokens_in: 1500,
+    tokens_out: 500,
+    ...overrides,
+  }
 }
 
 afterEach(() => {
@@ -15,7 +42,7 @@ afterEach(() => {
 describe('SessionsTable', () => {
   it('renders rows for each running entry with issue IDs', () => {
     const entries: RunningEntry[] = [
-      {
+      createEntry({
         issue_id: 'ISSUE-100',
         attempt: 2,
         pid: 1234,
@@ -25,8 +52,8 @@ describe('SessionsTable', () => {
         phase: 4,
         tokens_in: 1500,
         tokens_out: 500,
-      },
-      {
+      }),
+      createEntry({
         issue_id: 'ISSUE-200',
         attempt: 1,
         pid: 5678,
@@ -36,7 +63,7 @@ describe('SessionsTable', () => {
         phase: 6,
         tokens_in: 250,
         tokens_out: 125,
-      },
+      }),
     ]
 
     render(<SessionsTable entries={entries} />)
@@ -47,13 +74,54 @@ describe('SessionsTable', () => {
     expect(rows.length).toBe(3)
     expectInDocument(screen.getByText('ISSUE-100'))
     expectInDocument(screen.getByText('ISSUE-200'))
-    expectInDocument(screen.getByText('流式执行'))
-    expectInDocument(screen.getByText('成功'))
+    expectInDocument(screen.getByText('AgentRunning'))
+    expectInDocument(screen.getByText('Done'))
   })
 
   it('renders empty state when there are no entries', () => {
     render(<SessionsTable entries={[]} />)
 
     expectInDocument(screen.getByText('暂无运行会话'))
+  })
+
+  it('prefers server phase labels', () => {
+    render(<SessionsTable entries={[createEntry({ phase_label: 'AgentRunning · turn 3' })]} />)
+
+    expectInDocument(screen.getByText('AgentRunning · turn 3'))
+  })
+
+  it('falls back to client phase labels', () => {
+    render(<SessionsTable entries={[createEntry({ phase: 4, phase_label: '' })]} />)
+
+    expectInDocument(screen.getByText('AgentRunning'))
+    expect(screen.queryByText('4')).toBeNull()
+  })
+
+  it('renders diff stats and iteration badge', () => {
+    render(
+      <SessionsTable
+        entries={[
+          createEntry({
+            diff_added: 47,
+            diff_removed: 3,
+            diff_files: 2,
+            diff_status: 'ok',
+            iteration: 3,
+            iteration_max: 50,
+          }),
+        ]}
+      />,
+    )
+
+    expectInDocument(screen.getByText('+47 -3 (2 files)'))
+    expectInDocument(screen.getByText('iter 3/50'))
+  })
+
+  it('renders diff timeout as unknown with tooltip', () => {
+    render(<SessionsTable entries={[createEntry({ diff_status: 'timeout' })]} />)
+
+    const timeoutCell = screen.getByText('?')
+    expectInDocument(timeoutCell)
+    expect(timeoutCell.getAttribute('title')).toBe('timeout')
   })
 })

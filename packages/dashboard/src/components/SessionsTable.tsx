@@ -1,10 +1,23 @@
 import type { RunningEntry } from '../types'
-import { formatElapsedSince, formatNumber, formatPhase } from '../i18n/format'
+import { formatElapsedSince, formatNumber, formatPhase, formatRelativeTime } from '../i18n/format'
 import { zhCN } from '../i18n/messages'
 import './SessionsTable.css'
 
+type LivenessEntry = RunningEntry & {
+  phase_label?: string
+  last_activity_at?: string
+  last_activity_kind?: string
+  last_heartbeat_at?: string
+  iteration?: number
+  iteration_max?: number
+  diff_added?: number
+  diff_removed?: number
+  diff_files?: number
+  diff_status?: string
+}
+
 interface SessionsTableProps {
-  entries: RunningEntry[]
+  entries: LivenessEntry[]
 }
 
 function formatAge(startedAt: string): string {
@@ -13,6 +26,116 @@ function formatAge(startedAt: string): string {
 
 function truncateSessionID(sessionID: string): string {
   return sessionID.slice(0, 8)
+}
+
+function phaseLabel(entry: LivenessEntry): string {
+  const serverLabel = entry.phase_label?.trim()
+  if (serverLabel) {
+    return serverLabel
+  }
+
+  return formatPhase(entry.phase)
+}
+
+function activityTone(lastActivityAt: string | undefined): 'none' | 'fresh' | 'warm' | 'stale' {
+  if (!lastActivityAt) {
+    return 'none'
+  }
+
+  const parsed = Date.parse(lastActivityAt)
+  if (Number.isNaN(parsed)) {
+    return 'none'
+  }
+
+  const ageSeconds = Math.floor(Math.max(0, Date.now() - parsed) / 1000)
+  if (ageSeconds < 30) {
+    return 'fresh'
+  }
+  if (ageSeconds <= 180) {
+    return 'warm'
+  }
+  return 'stale'
+}
+
+function activityDotColor(tone: ReturnType<typeof activityTone>): string {
+  switch (tone) {
+    case 'fresh':
+      return 'oklch(70% 0.18 145)'
+    case 'warm':
+      return 'oklch(76% 0.15 80)'
+    case 'stale':
+      return 'oklch(63% 0.2 28)'
+    default:
+      return 'oklch(62% 0.02 250)'
+  }
+}
+
+function renderLastActivity(entry: LivenessEntry) {
+  const tone = activityTone(entry.last_activity_at)
+  const relative = entry.last_activity_at ? formatRelativeTime(entry.last_activity_at) : zhCN.sessions.relative.unknown
+
+  return (
+    <span
+      className="sessions-table__activity"
+      data-activity-tone={tone}
+      title={entry.last_heartbeat_at ? `heartbeat ${formatRelativeTime(entry.last_heartbeat_at)}` : undefined}
+    >
+      <span
+        aria-hidden="true"
+        className="sessions-table__activity-dot"
+        style={{
+          backgroundColor: activityDotColor(tone),
+          borderRadius: '999px',
+          display: 'inline-block',
+          height: '0.55rem',
+          marginRight: '0.35rem',
+          width: '0.55rem',
+        }}
+      />
+      <span>{relative}</span>
+      {entry.last_activity_kind ? (
+        <span className="sessions-table__activity-kind" style={{ color: 'var(--text-secondary)', marginLeft: '0.35rem' }}>
+          {entry.last_activity_kind}
+        </span>
+      ) : null}
+    </span>
+  )
+}
+
+function renderDiff(entry: LivenessEntry): string {
+  const status = entry.diff_status ?? 'ok'
+  if (status !== 'ok') {
+    return '?'
+  }
+
+  const added = entry.diff_added ?? 0
+  const removed = entry.diff_removed ?? 0
+  const files = entry.diff_files ?? 0
+  if (added === 0 && removed === 0 && files === 0) {
+    return '—'
+  }
+
+  return `+${added} -${removed} (${files} files)`
+}
+
+function renderIteration(entry: LivenessEntry) {
+  const max = entry.iteration_max ?? 0
+  if (max <= 0) {
+    return null
+  }
+
+  return (
+    <span
+      className="sessions-table__iter-badge"
+      style={{
+        border: '1px solid var(--border-color)',
+        borderRadius: '999px',
+        padding: '0.1rem 0.45rem',
+      }}
+    >
+      iter {entry.iteration ?? 0}/{max}
+    </span>
+  )
 }
 
 export function SessionsTable({ entries }: SessionsTableProps) {
@@ -31,6 +154,9 @@ export function SessionsTable({ entries }: SessionsTableProps) {
           <tr>
             <th>{zhCN.sessions.headers.issueID}</th>
             <th>{zhCN.sessions.headers.phase}</th>
+            <th>{zhCN.sessions.headers.lastActivity}</th>
+            <th>{zhCN.sessions.headers.diff}</th>
+            <th>{zhCN.sessions.headers.iter}</th>
             <th>{zhCN.sessions.headers.pid}</th>
             <th>{zhCN.sessions.headers.age}</th>
             <th>{zhCN.sessions.headers.turns}</th>
@@ -44,7 +170,12 @@ export function SessionsTable({ entries }: SessionsTableProps) {
           {sortedEntries.map((entry) => (
             <tr key={`${entry.issue_id}-${entry.pid}-${entry.started_at}`}>
               <td>{entry.issue_id}</td>
-              <td title={formatPhase(entry.phase)}>{formatPhase(entry.phase)}</td>
+              <td title={phaseLabel(entry)}>{phaseLabel(entry)}</td>
+              <td>{renderLastActivity(entry)}</td>
+              <td className="sessions-table__mono" title={entry.diff_status && entry.diff_status !== 'ok' ? entry.diff_status : undefined}>
+                {renderDiff(entry)}
+              </td>
+              <td>{renderIteration(entry)}</td>
               <td className="sessions-table__mono">{entry.pid}</td>
               <td>{formatAge(entry.started_at)}</td>
               <td className="sessions-table__mono">{entry.attempt}</td>

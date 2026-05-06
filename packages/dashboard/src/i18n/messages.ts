@@ -78,6 +78,9 @@ export const zhCN = {
     headers: {
       issueID: '议题 ID',
       phase: '阶段',
+      lastActivity: '上次活动',
+      diff: '差异',
+      iter: '迭代',
       pid: 'PID',
       age: '耗时',
       turns: '轮次',
@@ -85,6 +88,14 @@ export const zhCN = {
       tokensOut: '输出 Token',
       sessionID: '会话 ID',
       lastEvent: '最后事件',
+    },
+    relative: {
+      unknown: '暂无活动',
+      justNow: '刚刚',
+      secondsAgo: (seconds: number) => `${seconds}秒前`,
+      minutesAgo: (minutes: number) => `${minutes}分钟前`,
+      hoursAgo: (hours: number) => `${hours}小时前`,
+      daysAgo: (days: number) => `${days}天前`,
     },
   },
   team: {
