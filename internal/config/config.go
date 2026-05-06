@@ -18,8 +18,16 @@ const (
 	defaultWorkspaceBaseDir    = "."
 	defaultBranchPrefix        = "symphony/"
 	defaultCodexBinaryPath     = "codex app-server"
-	defaultApprovalPolicy      = "auto-edit"
-	defaultSandbox             = "docker"
+	// defaultApprovalPolicy and defaultSandbox are intentionally empty.
+	// Earlier values ("auto-edit" / "docker") were not valid codex TOML
+	// settings — codex accepts approval_policy values like "never" /
+	// "on-request" and sandbox_mode values like "workspace-write". Keeping
+	// these empty means contrabass injects nothing when a workflow does not
+	// set them, so codex falls back to whatever lives in
+	// ~/.codex/config.toml. Operators opt in via codex.approval_policy and
+	// codex.sandbox in their workflow file.
+	defaultApprovalPolicy = ""
+	defaultSandbox        = ""
 	defaultAgentType           = "codex"
 	defaultOpenCodeBinaryPath  = "opencode serve"
 	defaultOMXBinaryPath       = "omx"
