@@ -112,6 +112,7 @@ type RunAttempt struct {
 	LastEvent       string    `json:"last_event"`
 	Error           string    `json:"error"`
 	WorkspacePath   string    `json:"workspace_path"`
+	ClaimHeadSha    string    `json:"claim_head_sha,omitempty"`
 }
 
 // BackoffEntry represents a scheduled retry state for an issue.
