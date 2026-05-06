@@ -16,16 +16,16 @@ describe('Header', () => {
     render(<Header connected runtimeSeconds={135} />)
 
     expectInDocument(screen.getByRole('heading', { name: 'Contrabass' }))
-    expectInDocument(screen.getByText('Live'))
-    expectInDocument(screen.getByText('Runtime'))
-    expectInDocument(screen.getByText('2m 15s'))
+    expectInDocument(screen.getByText('在线'))
+    expectInDocument(screen.getByText('运行时长'))
+    expectInDocument(screen.getByText('2分 15秒'))
   })
 
   it('renders offline badge when disconnected', () => {
     render(<Header connected={false} runtimeSeconds={1} />)
 
-    expectInDocument(screen.getByText('Offline'))
-    expectInDocument(screen.getByText('Runtime'))
-    expectInDocument(screen.getByText('0m 1s'))
+    expectInDocument(screen.getByText('离线'))
+    expectInDocument(screen.getByText('运行时长'))
+    expectInDocument(screen.getByText('0分 1秒'))
   })
 })

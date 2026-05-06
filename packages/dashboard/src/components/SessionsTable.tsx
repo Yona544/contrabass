@@ -1,40 +1,14 @@
 import type { RunningEntry } from '../types'
+import { formatElapsedSince, formatNumber, formatPhase } from '../i18n/format'
+import { zhCN } from '../i18n/messages'
 import './SessionsTable.css'
 
 interface SessionsTableProps {
   entries: RunningEntry[]
 }
 
-const PHASE_NAMES: Record<number, string> = {
-  0: 'PreparingWorkspace',
-  1: 'BuildingPrompt',
-  2: 'LaunchingAgentProcess',
-  3: 'InitializingSession',
-  4: 'StreamingTurn',
-  5: 'Finishing',
-  6: 'Succeeded',
-  7: 'Failed',
-  8: 'TimedOut',
-  9: 'Stalled',
-  10: 'CanceledByReconciliation',
-}
-
 function formatAge(startedAt: string): string {
-  const started = new Date(startedAt).getTime()
-  if (Number.isNaN(started)) {
-    return '-'
-  }
-
-  const elapsedMs = Math.max(0, Date.now() - started)
-  const totalSeconds = Math.floor(elapsedMs / 1000)
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = totalSeconds % 60
-
-  return `${minutes}m ${seconds}s`
-}
-
-function formatPhase(phase: number): string {
-  return PHASE_NAMES[phase] ?? `Unknown(${phase})`
+  return formatElapsedSince(startedAt)
 }
 
 function truncateSessionID(sessionID: string): string {
@@ -43,7 +17,7 @@ function truncateSessionID(sessionID: string): string {
 
 export function SessionsTable({ entries }: SessionsTableProps) {
   if (entries.length === 0) {
-    return <div className="sessions-table__empty">No running sessions</div>
+    return <div className="sessions-table__empty">{zhCN.sessions.empty}</div>
   }
 
   const sortedEntries = [...entries].sort(
@@ -52,18 +26,18 @@ export function SessionsTable({ entries }: SessionsTableProps) {
 
   return (
     <div className="sessions-table__wrapper">
-      <table className="sessions-table" aria-label="Running sessions">
+      <table className="sessions-table" aria-label={zhCN.sessions.ariaLabel}>
         <thead>
           <tr>
-            <th>Issue ID</th>
-            <th>Stage/Phase</th>
-            <th>PID</th>
-            <th>Age</th>
-            <th>Turns</th>
-            <th>Tokens In</th>
-            <th>Tokens Out</th>
-            <th>Session ID</th>
-            <th>Last Event</th>
+            <th>{zhCN.sessions.headers.issueID}</th>
+            <th>{zhCN.sessions.headers.phase}</th>
+            <th>{zhCN.sessions.headers.pid}</th>
+            <th>{zhCN.sessions.headers.age}</th>
+            <th>{zhCN.sessions.headers.turns}</th>
+            <th>{zhCN.sessions.headers.tokensIn}</th>
+            <th>{zhCN.sessions.headers.tokensOut}</th>
+            <th>{zhCN.sessions.headers.sessionID}</th>
+            <th>{zhCN.sessions.headers.lastEvent}</th>
           </tr>
         </thead>
         <tbody>
@@ -74,8 +48,8 @@ export function SessionsTable({ entries }: SessionsTableProps) {
               <td className="sessions-table__mono">{entry.pid}</td>
               <td>{formatAge(entry.started_at)}</td>
               <td className="sessions-table__mono">{entry.attempt}</td>
-              <td className="sessions-table__mono">{entry.tokens_in.toLocaleString()}</td>
-              <td className="sessions-table__mono">{entry.tokens_out.toLocaleString()}</td>
+              <td className="sessions-table__mono">{formatNumber(entry.tokens_in)}</td>
+              <td className="sessions-table__mono">{formatNumber(entry.tokens_out)}</td>
               <td className="sessions-table__mono" title={entry.session_id}>
                 {truncateSessionID(entry.session_id)}
               </td>

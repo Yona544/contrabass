@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AgentLogEvent } from '../types'
+import { zhCN } from '../i18n/messages'
 import './AgentLogs.css'
 
 interface AgentLogsProps {
@@ -89,17 +90,17 @@ export function AgentLogs({ logs }: AgentLogsProps) {
   if (logs.length === 0) {
     return (
       <section className="agent-logs agent-logs--empty" aria-live="polite">
-        <p className="agent-logs__empty-text">No agent logs</p>
+        <p className="agent-logs__empty-text">{zhCN.agentLogs.empty}</p>
       </section>
     )
   }
 
   return (
-    <section className="agent-logs" aria-label="Agent logs">
+    <section className="agent-logs" aria-label={zhCN.agentLogs.ariaLabel}>
       <header className="agent-logs__header">
-        <h3 className="agent-logs__title">Agent Logs</h3>
+        <h3 className="agent-logs__title">{zhCN.agentLogs.title}</h3>
         <label className="agent-logs__filter-label" htmlFor="agent-logs-worker-filter">
-          Worker
+          {zhCN.agentLogs.workerFilter}
         </label>
         <select
           id="agent-logs-worker-filter"
@@ -107,7 +108,7 @@ export function AgentLogs({ logs }: AgentLogsProps) {
           value={selectedWorker}
           onChange={(event) => setSelectedWorker(event.target.value)}
         >
-          <option value="all">All</option>
+          <option value="all">{zhCN.agentLogs.allWorkers}</option>
           {workerIDs.map((workerID) => (
             <option key={workerID} value={workerID}>
               {workerID}
@@ -118,7 +119,7 @@ export function AgentLogs({ logs }: AgentLogsProps) {
 
       <div className="agent-logs__viewport" ref={viewportRef} onScroll={handleScroll}>
         {visibleLogs.length === 0 ? (
-          <p className="agent-logs__empty-filtered">No logs for selected worker</p>
+          <p className="agent-logs__empty-filtered">{zhCN.agentLogs.emptyFiltered}</p>
         ) : (
           visibleLogs.map((log, index) => {
             const tone = getWorkerTone(log.worker_id)

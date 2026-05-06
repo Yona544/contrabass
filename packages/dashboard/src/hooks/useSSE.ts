@@ -13,6 +13,7 @@ import type {
   WebEvent,
   WorkerState,
 } from '../types'
+import { zhCN } from '../i18n/messages'
 
 export interface SSEState {
   state: StateSnapshot | null
@@ -470,7 +471,7 @@ export function useSSE() {
         const data = JSON.parse((event as MessageEvent).data) as StateSnapshot
         dispatch({ type: 'snapshot', data })
       } catch {
-        dispatch({ type: 'error', message: 'Failed to parse snapshot payload' })
+        dispatch({ type: 'error', message: zhCN.errors.parseSnapshot })
       }
     })
 
@@ -497,9 +498,9 @@ export function useSSE() {
             return
           }
 
-          dispatch({ type: 'error', message: `Failed to parse ${eventName} payload` })
+          dispatch({ type: 'error', message: zhCN.errors.parseEvent(eventName) })
         } catch {
-          dispatch({ type: 'error', message: `Failed to parse ${eventName} payload` })
+          dispatch({ type: 'error', message: zhCN.errors.parseEvent(eventName) })
         }
       })
     }

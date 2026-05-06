@@ -41,19 +41,19 @@ describe('SessionsTable', () => {
 
     render(<SessionsTable entries={entries} />)
 
-    const table = screen.getByRole('table', { name: 'Running sessions' })
+    const table = screen.getByRole('table', { name: '运行会话' })
     const rows = within(table).getAllByRole('row')
 
     expect(rows.length).toBe(3)
     expectInDocument(screen.getByText('ISSUE-100'))
     expectInDocument(screen.getByText('ISSUE-200'))
-    expectInDocument(screen.getByText('StreamingTurn'))
-    expectInDocument(screen.getByText('Succeeded'))
+    expectInDocument(screen.getByText('流式执行'))
+    expectInDocument(screen.getByText('成功'))
   })
 
   it('renders empty state when there are no entries', () => {
     render(<SessionsTable entries={[]} />)
 
-    expectInDocument(screen.getByText('No running sessions'))
+    expectInDocument(screen.getByText('暂无运行会话'))
   })
 })

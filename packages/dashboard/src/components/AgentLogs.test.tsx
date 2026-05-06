@@ -26,7 +26,7 @@ describe('AgentLogs', () => {
   it('renders empty state', () => {
     render(<AgentLogs logs={[]} />)
 
-    expectInDocument(screen.getByText('No agent logs'))
+    expectInDocument(screen.getByText('暂无代理日志'))
   })
 
   it('renders log lines with timestamp, worker, and message', () => {
@@ -66,7 +66,7 @@ describe('AgentLogs', () => {
       />,
     )
 
-    const filter = screen.getByLabelText('Worker') as HTMLSelectElement
+    const filter = screen.getByLabelText('工作器') as HTMLSelectElement
     const optionValues = Array.from(filter.options).map((option) => option.value)
     expect(optionValues).toEqual(['all', 'worker-a', 'worker-z'])
 

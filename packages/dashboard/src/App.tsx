@@ -10,6 +10,7 @@ import { WorkerTable } from './components/WorkerTable'
 import { BoardView } from './components/BoardView'
 import { AgentLogs } from './components/AgentLogs'
 import { useSSE } from './hooks/useSSE'
+import { zhCN } from './i18n/messages'
 
 function computeRuntimeSeconds(startTime: string | undefined): number {
   if (!startTime) {
@@ -76,7 +77,7 @@ function App() {
 
       {error ? (
         <div className="dashboard__notice dashboard__notice--error" role="alert">
-          <p className="dashboard__notice-title">Connection error</p>
+          <p className="dashboard__notice-title">{zhCN.app.connectionError}</p>
           <p className="dashboard__notice-message">{error}</p>
         </div>
       ) : null}
@@ -86,24 +87,24 @@ function App() {
       <div className="dashboard__grid">
         <div className="dashboard__primary">
           <section className="dashboard__section">
-            <h2 className="dashboard__section-label">Running Sessions</h2>
+            <h2 className="dashboard__section-label">{zhCN.app.sections.runningSessions}</h2>
             <SessionsTable entries={state.running ?? []} />
           </section>
 
           <section className="dashboard__section">
-            <h2 className="dashboard__section-label">Board</h2>
+            <h2 className="dashboard__section-label">{zhCN.app.sections.board}</h2>
             <BoardView issues={boardIssues} />
           </section>
         </div>
 
         <aside className="dashboard__sidebar">
           <section className="dashboard__section">
-            <h2 className="dashboard__section-label">Retry Queue</h2>
+            <h2 className="dashboard__section-label">{zhCN.app.sections.retryQueue}</h2>
             <RetryQueue entries={state.backoff ?? []} />
           </section>
 
           <section className="dashboard__section">
-            <h2 className="dashboard__section-label">Rate Limits</h2>
+            <h2 className="dashboard__section-label">{zhCN.app.sections.rateLimits}</h2>
             <RateLimits limits={[]} />
           </section>
 
@@ -111,12 +112,12 @@ function App() {
             <>
               <hr className="dashboard__separator" />
               <section className="dashboard__section">
-                <h2 className="dashboard__section-label">Team Status</h2>
+                <h2 className="dashboard__section-label">{zhCN.app.sections.teamStatus}</h2>
                 <TeamTable snapshot={teamSnapshot} />
               </section>
 
               <section className="dashboard__section">
-                <h2 className="dashboard__section-label">Workers</h2>
+                <h2 className="dashboard__section-label">{zhCN.app.sections.workers}</h2>
                 <WorkerTable workers={teamSnapshot.workers} />
               </section>
             </>
@@ -125,7 +126,7 @@ function App() {
       </div>
 
       <section className="dashboard__logs">
-        <h2 className="dashboard__section-label">Agent Logs</h2>
+        <h2 className="dashboard__section-label">{zhCN.app.sections.agentLogs}</h2>
         <AgentLogs logs={agentLogs} />
       </section>
     </div>
