@@ -135,6 +135,101 @@ func TestFetchIssues_EmptyResponse(t *testing.T) {
 	assert.NotNil(t, issues) // should be empty slice, not nil
 }
 
+// TestFetchIssues_FiltersTerminalAndBacklogStates exercises the post-success
+// re-claim guard: the orchestrator releases an issue by transitioning its Linear
+// state to "Done" (type=completed). Without this filter the next poll would
+// hand the same issue back to the orchestrator and produce a re-claim loop.
+// Backlog issues are also filtered so triage-stage work doesn't get picked up.
+func TestFetchIssues_FiltersTerminalAndBacklogStates(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		respondJSON(w, 200, map[string]interface{}{
+			"data": map[string]interface{}{
+				"issues": map[string]interface{}{
+					"nodes": []interface{}{
+						map[string]interface{}{
+							"id":     "open-todo",
+							"title":  "Open Todo",
+							"state":  map[string]interface{}{"name": "Todo", "type": "unstarted"},
+							"labels": map[string]interface{}{"nodes": []interface{}{}},
+						},
+						map[string]interface{}{
+							"id":     "open-in-progress",
+							"title":  "Open In Progress",
+							"state":  map[string]interface{}{"name": "In Progress", "type": "started"},
+							"labels": map[string]interface{}{"nodes": []interface{}{}},
+						},
+						map[string]interface{}{
+							"id":     "done-completed",
+							"title":  "Done Completed",
+							"state":  map[string]interface{}{"name": "Done", "type": "completed"},
+							"labels": map[string]interface{}{"nodes": []interface{}{}},
+						},
+						map[string]interface{}{
+							"id":     "canceled",
+							"title":  "Canceled",
+							"state":  map[string]interface{}{"name": "Canceled", "type": "canceled"},
+							"labels": map[string]interface{}{"nodes": []interface{}{}},
+						},
+						map[string]interface{}{
+							"id":     "backlog",
+							"title":  "Backlog",
+							"state":  map[string]interface{}{"name": "Backlog", "type": "backlog"},
+							"labels": map[string]interface{}{"nodes": []interface{}{}},
+						},
+					},
+					"pageInfo": map[string]interface{}{"hasNextPage": false},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := testClient(t, server.URL)
+	issues, err := client.FetchIssues(context.Background())
+
+	require.NoError(t, err)
+	require.Len(t, issues, 2, "completed/canceled/backlog must be filtered out")
+
+	ids := []string{issues[0].ID, issues[1].ID}
+	assert.ElementsMatch(t, []string{"open-todo", "open-in-progress"}, ids)
+
+	for _, iss := range issues {
+		assert.Contains(t, []string{"unstarted", "started"}, iss.TrackerMeta["linear_state_type"])
+	}
+}
+
+// TestFetchIssues_KeepsIssuesWithoutStateType guards backwards compatibility:
+// older / mocked Linear responses that omit state.type must still be returned
+// so the orchestrator's existing behavior is preserved when type info is
+// genuinely unavailable. Real Linear always returns type, so this only covers
+// fixtures and adversarial responses.
+func TestFetchIssues_KeepsIssuesWithoutStateType(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		respondJSON(w, 200, map[string]interface{}{
+			"data": map[string]interface{}{
+				"issues": map[string]interface{}{
+					"nodes": []interface{}{
+						map[string]interface{}{
+							"id":     "no-type",
+							"title":  "Type Field Omitted",
+							"state":  map[string]interface{}{"name": "Todo"},
+							"labels": map[string]interface{}{"nodes": []interface{}{}},
+						},
+					},
+					"pageInfo": map[string]interface{}{"hasNextPage": false},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := testClient(t, server.URL)
+	issues, err := client.FetchIssues(context.Background())
+	require.NoError(t, err)
+	require.Len(t, issues, 1)
+	assert.Equal(t, "", issues[0].TrackerMeta["linear_state_type"])
+}
+
 func TestFetchIssues_Pagination(t *testing.T) {
 	var requestCount atomic.Int32
 

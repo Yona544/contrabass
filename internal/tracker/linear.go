@@ -107,7 +107,7 @@ const fetchIssuesQuery = `query FetchIssues($projectSlug: String!, $first: Int!,
 			title
 			description
 			priority
-			state { name }
+			state { name type }
 			url
 			labels { nodes { name } }
 			createdAt
@@ -189,7 +189,13 @@ func (c *LinearClient) FetchIssues(ctx context.Context) ([]types.Issue, error) {
 			return nil, err
 		}
 
-		allIssues = append(allIssues, issues...)
+		for _, iss := range issues {
+			stateType, _ := iss.TrackerMeta["linear_state_type"].(string)
+			if !isClaimableLinearStateType(stateType) {
+				continue
+			}
+			allIssues = append(allIssues, iss)
+		}
 
 		hasNextPage, _ := pageInfo["hasNextPage"].(bool)
 		endCursor, _ := pageInfo["endCursor"].(string)
@@ -447,8 +453,10 @@ func decodeIssuesResponse(data map[string]interface{}) ([]types.Issue, map[strin
 // normalizeIssue converts a Linear API issue node into a types.Issue.
 func normalizeIssue(node map[string]interface{}) types.Issue {
 	linearState := ""
+	linearStateType := ""
 	if state, ok := node["state"].(map[string]interface{}); ok {
 		linearState, _ = state["name"].(string)
+		linearStateType, _ = state["type"].(string)
 	}
 
 	identifier := getString(node, "identifier")
@@ -476,9 +484,35 @@ func normalizeIssue(node map[string]interface{}) types.Issue {
 		CreatedAt:     createdAt,
 		UpdatedAt:     updatedAt,
 		TrackerMeta: map[string]interface{}{
-			"linear_state": linearState,
+			"linear_state":      linearState,
+			"linear_state_type": linearStateType,
 		},
 	}
+}
+
+// terminalLinearStateTypes lists Linear state.type values for issues that the
+// orchestrator must NOT consider claimable. Without this filter, an issue that
+// was just successfully released (state=Done, type=completed) would reappear in
+// the next poll as Unclaimed and be picked up again, producing a re-claim loop.
+//
+// "completed" and "canceled" cover Linear's terminal types. "backlog" is also
+// excluded so triage-stage issues don't get picked up before a human moves them
+// to Todo / In Progress.
+var terminalLinearStateTypes = map[string]struct{}{
+	"completed": {},
+	"canceled":  {},
+	"backlog":   {},
+}
+
+// isClaimableLinearStateType reports whether an issue with this Linear state
+// type should be returned to the orchestrator. An empty string is treated as
+// claimable so existing test fixtures (which omit the type field) keep working.
+func isClaimableLinearStateType(linearStateType string) bool {
+	if linearStateType == "" {
+		return true
+	}
+	_, terminal := terminalLinearStateTypes[linearStateType]
+	return !terminal
 }
 
 // extractLabels extracts and lowercases label names from the issue node.
