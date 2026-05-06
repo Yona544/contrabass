@@ -574,41 +574,7 @@ func (r *teamCLIRunner) runCommand(ctx context.Context, workspace string, args .
 
 	cmd := exec.CommandContext(ctx, argv[0], append(argv[1:], args...)...)
 	cmd.Dir = workspace
-	cmd.Env = isolatedTeamEnv(workspace)
 	return cmd.CombinedOutput()
-}
-
-// isolatedTeamEnv returns an environment that pins the team CLI to its own
-// tmux server, scoped to the workspace. Each team gets a dedicated tmux
-// socket under <workspace>/.contrabass/tmux-sock/, so an `omx team` launched
-// by contrabass cannot attach to (or be confused with) an unrelated omx
-// session the user already has running on the default tmux server.
-//
-// The directory is created best-effort; if mkdir fails, we fall back to the
-// inherited environment rather than blocking the launch — the worst case is
-// the legacy shared-server behaviour, not a hard failure.
-func isolatedTeamEnv(workspace string) []string {
-	env := os.Environ()
-	if workspace == "" {
-		return env
-	}
-
-	socketDir := filepath.Join(workspace, ".contrabass", "tmux-sock")
-	if err := os.MkdirAll(socketDir, 0o700); err != nil {
-		return env
-	}
-
-	filtered := env[:0:len(env)]
-	for _, kv := range env {
-		// Drop pre-existing tmux session bindings so the child doesn't think
-		// it is already attached to an outer tmux pane.
-		if strings.HasPrefix(kv, "TMUX=") || strings.HasPrefix(kv, "TMUX_TMPDIR=") {
-			continue
-		}
-		filtered = append(filtered, kv)
-	}
-	filtered = append(filtered, "TMUX_TMPDIR="+socketDir)
-	return filtered
 }
 
 func buildTeamTaskSeed(issue types.Issue, prompt string) string {
