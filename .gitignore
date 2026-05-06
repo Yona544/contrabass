@@ -42,3 +42,15 @@ Thumbs.db
 .omx/
 .contrabass/runner/
 .contrabass/state/
+
+# Session artifacts (per-developer, not project code)
+CLAUDE.md
+graphify-out/
+
+# Local test board fixtures (CB-1 is the seed; CB-2..N are session-only)
+.contrabass/board/issues/CB-2.json
+.contrabass/board/issues/CB-3.json
+.contrabass/board/issues/CB-4.json
+.contrabass/board/comments/CB-2.jsonl
+.contrabass/board/comments/CB-3.jsonl
+.contrabass/board/comments/CB-4.jsonl
