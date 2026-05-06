@@ -642,6 +642,35 @@ func parseUsageTokens(data map[string]interface{}) (int64, int64) {
 		return 0, 0
 	}
 
+	// codex 0.128+ shape: thread/tokenUsage/updated event
+	//   params.tokenUsage.total.{inputTokens, outputTokens, ...}   cumulative across turns
+	//   params.tokenUsage.last.{inputTokens, outputTokens, ...}    this turn only
+	//   params.tokenUsage.modelContextWindow                       informational
+	// Use total to feed the orchestrator's cumulative delta accounting.
+	if tu, ok := data["tokenUsage"].(map[string]interface{}); ok {
+		// Modern (codex 0.128 verified): total is itself a map of counters.
+		if total, ok := tu["total"].(map[string]interface{}); ok {
+			in := firstInt64(total, "inputTokens", "input_tokens", "prompt_tokens")
+			out := firstInt64(total, "outputTokens", "output_tokens", "completion_tokens")
+			if in != 0 || out != 0 {
+				return in, out
+			}
+		}
+		// Legacy hypothesis (per older docs): tokenUsage.context.{inputTokens, outputTokens}.
+		if ctx, ok := tu["context"].(map[string]interface{}); ok {
+			in := firstInt64(ctx, "inputTokens", "input_tokens", "prompt_tokens")
+			out := firstInt64(ctx, "outputTokens", "output_tokens", "completion_tokens")
+			if in != 0 || out != 0 {
+				return in, out
+			}
+		}
+		// Very old hypothesis: tokenUsage.total is itself an integer.
+		if total := firstInt64(tu, "total"); total != 0 {
+			return 0, total
+		}
+	}
+
+	// Legacy + omx shape: data["usage"]
 	rawUsage, ok := data["usage"]
 	if !ok {
 		return 0, 0

@@ -1409,6 +1409,81 @@ func TestParseUsageTokens_TotalTokensFallback(t *testing.T) {
 			wantIn:  0,
 			wantOut: 0,
 		},
+		{
+			// Real codex 0.128 shape captured live: tokenUsage.total is a map.
+			name: "codex_0_128_tokenUsage_total_map",
+			data: map[string]interface{}{
+				"tokenUsage": map[string]interface{}{
+					"total": map[string]interface{}{
+						"cachedInputTokens":     float64(3456),
+						"inputTokens":           float64(24261),
+						"outputTokens":          float64(607),
+						"reasoningOutputTokens": float64(507),
+						"totalTokens":           float64(24868),
+					},
+					"last": map[string]interface{}{
+						"inputTokens":  float64(24261),
+						"outputTokens": float64(607),
+					},
+					"modelContextWindow": float64(258400),
+				},
+			},
+			wantIn:  24261,
+			wantOut: 607,
+		},
+		{
+			// Legacy fallback: tokenUsage.context.{inputTokens, outputTokens} (older codex docs).
+			name: "codex_legacy_tokenUsage_context_fallback",
+			data: map[string]interface{}{
+				"tokenUsage": map[string]interface{}{
+					"context": map[string]interface{}{
+						"inputTokens":  float64(800),
+						"outputTokens": float64(434),
+					},
+				},
+			},
+			wantIn:  800,
+			wantOut: 434,
+		},
+		{
+			name: "codex_very_old_tokenUsage_total_int",
+			data: map[string]interface{}{
+				"tokenUsage": map[string]interface{}{
+					"total": float64(900),
+				},
+			},
+			wantIn:  0,
+			wantOut: 900,
+		},
+		{
+			name: "codex_0_128_tokenUsage_takes_precedence_over_legacy_usage",
+			data: map[string]interface{}{
+				"tokenUsage": map[string]interface{}{
+					"total": map[string]interface{}{
+						"inputTokens":  float64(11),
+						"outputTokens": float64(22),
+					},
+				},
+				"usage": map[string]interface{}{
+					"prompt_tokens":     float64(99),
+					"completion_tokens": float64(88),
+				},
+			},
+			wantIn:  11,
+			wantOut: 22,
+		},
+		{
+			name: "tokenUsage_is_not_a_map_falls_through_to_usage",
+			data: map[string]interface{}{
+				"tokenUsage": "not-a-map",
+				"usage": map[string]interface{}{
+					"prompt_tokens":     float64(7),
+					"completion_tokens": float64(3),
+				},
+			},
+			wantIn:  7,
+			wantOut: 3,
+		},
 	}
 
 	for _, tt := range tests {
