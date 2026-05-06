@@ -33,10 +33,13 @@ var (
 )
 
 type CodexRunner struct {
-	binaryPath string
-	timeout    time.Duration
-	logger     *log.Logger
-	options    CodexRunnerOptions
+	binaryPath         string
+	timeout            time.Duration
+	logger             *log.Logger
+	options            CodexRunnerOptions
+	overloadRetries    int
+	overloadRetryCap   time.Duration
+	overloadStartDelay time.Duration
 
 	mu    sync.Mutex
 	procs map[int]*codexProcess
@@ -94,10 +97,13 @@ func NewCodexRunner(binaryPath string, timeout time.Duration) *CodexRunner {
 	}
 
 	return &CodexRunner{
-		binaryPath: binaryPath,
-		timeout:    timeout,
-		logger:     log.NewWithOptions(io.Discard, log.Options{}),
-		procs:      make(map[int]*codexProcess),
+		binaryPath:         binaryPath,
+		timeout:            timeout,
+		logger:             log.NewWithOptions(io.Discard, log.Options{}),
+		overloadRetries:    5,
+		overloadRetryCap:   4 * time.Second,
+		overloadStartDelay: 100 * time.Millisecond,
+		procs:              make(map[int]*codexProcess),
 	}
 }
 
@@ -207,7 +213,7 @@ func (r *CodexRunner) Start(ctx context.Context, issue types.Issue, workspace st
 	reader := bufio.NewReader(stdout)
 	approvalPolicy, sandboxPolicy := r.policyParams()
 
-	if err := r.sendMessage(writer, map[string]interface{}{
+	initializeMsg := map[string]interface{}{
 		"id":     initializeRequestID,
 		"method": "initialize",
 		"params": map[string]interface{}{
@@ -218,12 +224,8 @@ func (r *CodexRunner) Start(ctx context.Context, issue types.Issue, workspace st
 			},
 			"capabilities": map[string]interface{}{"experimentalApi": true},
 		},
-	}); err != nil {
-		r.cleanupOnStartFailure(process)
-		return nil, err
 	}
-
-	if _, err := r.awaitResponse(reader, initializeRequestID); err != nil {
+	if _, err := r.handshakeStep(reader, writer, initializeMsg, initializeRequestID); err != nil {
 		r.cleanupOnStartFailure(process)
 		return nil, r.withStderr(err, stderrBuf)
 	}
@@ -236,7 +238,7 @@ func (r *CodexRunner) Start(ctx context.Context, issue types.Issue, workspace st
 		return nil, err
 	}
 
-	if err := r.sendMessage(writer, map[string]interface{}{
+	threadStartMsg := map[string]interface{}{
 		"id":     threadStartRequestID,
 		"method": "thread/start",
 		"params": map[string]interface{}{
@@ -244,12 +246,8 @@ func (r *CodexRunner) Start(ctx context.Context, issue types.Issue, workspace st
 			"approvalPolicy": approvalPolicy,
 			"sandboxPolicy":  sandboxPolicy,
 		},
-	}); err != nil {
-		r.cleanupOnStartFailure(process)
-		return nil, err
 	}
-
-	threadResult, err := r.awaitResponse(reader, threadStartRequestID)
+	threadResult, err := r.handshakeStep(reader, writer, threadStartMsg, threadStartRequestID)
 	if err != nil {
 		r.cleanupOnStartFailure(process)
 		return nil, r.withStderr(err, stderrBuf)
@@ -260,7 +258,7 @@ func (r *CodexRunner) Start(ctx context.Context, issue types.Issue, workspace st
 		threadID = "unknown-thread"
 	}
 
-	if err := r.sendMessage(writer, map[string]interface{}{
+	turnStartMsg := map[string]interface{}{
 		"id":     turnStartRequestID,
 		"method": "turn/start",
 		"params": map[string]interface{}{
@@ -274,12 +272,8 @@ func (r *CodexRunner) Start(ctx context.Context, issue types.Issue, workspace st
 				"text": prompt,
 			}},
 		},
-	}); err != nil {
-		r.cleanupOnStartFailure(process)
-		return nil, err
 	}
-
-	turnResult, err := r.awaitResponse(reader, turnStartRequestID)
+	turnResult, err := r.handshakeStep(reader, writer, turnStartMsg, turnStartRequestID)
 	if err != nil {
 		r.cleanupOnStartFailure(process)
 		return nil, r.withStderr(err, stderrBuf)
@@ -489,6 +483,48 @@ func (r *CodexRunner) awaitResponse(reader *bufio.Reader, requestID int) (map[st
 
 		return map[string]interface{}{}, nil
 	}
+}
+
+func (r *CodexRunner) handshakeStep(reader *bufio.Reader, writer *bufio.Writer, msg map[string]interface{}, requestID int) (map[string]interface{}, error) {
+	var lastErr error
+	for attempt := 0; attempt <= r.overloadRetries; attempt++ {
+		if err := r.sendMessage(writer, msg); err != nil {
+			return nil, err
+		}
+		result, err := r.awaitResponse(reader, requestID)
+		if !isOverloadError(err) {
+			return result, err
+		}
+		lastErr = err
+		if attempt == r.overloadRetries {
+			break
+		}
+
+		delay := r.overloadRetryDelay(attempt)
+		r.logger.Warn("codex app-server overloaded; retrying handshake", "id", requestID, "attempt", attempt+1, "delay", delay)
+		time.Sleep(delay)
+	}
+	return nil, fmt.Errorf("codex handshake id=%d overload retries exhausted: %w", requestID, lastErr)
+}
+
+func (r *CodexRunner) overloadRetryDelay(attempt int) time.Duration {
+	if r.overloadStartDelay <= 0 {
+		return 0
+	}
+	if r.overloadRetryCap <= 0 {
+		return r.overloadStartDelay
+	}
+	if attempt >= 4 {
+		return r.overloadRetryCap
+	}
+	delay := r.overloadStartDelay
+	for i := 0; i < attempt; i++ {
+		delay *= 2
+	}
+	if delay > r.overloadRetryCap {
+		return r.overloadRetryCap
+	}
+	return delay
 }
 
 func isCodexOverloadRPCError(rpcErr interface{}) bool {
