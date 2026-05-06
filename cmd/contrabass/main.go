@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
 	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -128,6 +131,17 @@ func parseLogLevel(s string) log.Level {
 	}
 }
 
+// newSessionID returns an 8-character hex token uniquely identifying this run,
+// so concurrent contrabass instances do not interleave entries into a shared log
+// file. Falls back to a nanosecond timestamp if crypto/rand is unavailable.
+func newSessionID() string {
+	var b [4]byte
+	if _, err := rand.Read(b[:]); err == nil {
+		return hex.EncodeToString(b[:])
+	}
+	return strconv.FormatInt(time.Now().UnixNano(), 16)
+}
+
 // run is the main entry point wired into the root command's RunE.
 func run(cfgPath string, noTUI bool, logFile, logLevel string, dryRun bool, port int) error {
 	// 1. Parse and validate workflow config
@@ -137,11 +151,19 @@ func run(cfgPath string, noTUI bool, logFile, logLevel string, dryRun bool, port
 	}
 
 	// 2. Create logger
+	session := newSessionID()
+	resolvedLogFile := logging.ResolveLogPath(logFile, session)
 	logger := logging.NewLogger(logging.LogOptions{
-		Level:  parseLogLevel(logLevel),
-		Output: logFile,
-		Prefix: "contrabass",
+		Level:   parseLogLevel(logLevel),
+		Output:  logFile,
+		Prefix:  "contrabass",
+		Session: session,
 	})
+	logTarget := resolvedLogFile
+	if logTarget == "" {
+		logTarget = "stderr"
+	}
+	fmt.Fprintf(os.Stderr, "contrabass session=%s log=%s\n", session, logTarget)
 
 	// 3. Create config watcher (live reload via fsnotify)
 	watcher, err := config.NewWatcher(cfgPath)
