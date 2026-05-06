@@ -29,6 +29,7 @@ const (
 var (
 	errCodexAlreadyStopped = errors.New("codex process already stopped")
 	errCodexStopFailed     = errors.New("codex process stop failed")
+	errCodexOverloaded     = errors.New("codex app-server overloaded (-32001)")
 )
 
 type CodexRunner struct {
@@ -476,6 +477,9 @@ func (r *CodexRunner) awaitResponse(reader *bufio.Reader, requestID int) (map[st
 		}
 
 		if rpcErr, ok := msg["error"]; ok {
+			if isCodexOverloadRPCError(rpcErr) {
+				return nil, errCodexOverloaded
+			}
 			return nil, fmt.Errorf("rpc error for id %d: %v", requestID, rpcErr)
 		}
 
@@ -485,6 +489,22 @@ func (r *CodexRunner) awaitResponse(reader *bufio.Reader, requestID int) (map[st
 
 		return map[string]interface{}{}, nil
 	}
+}
+
+func isCodexOverloadRPCError(rpcErr interface{}) bool {
+	errMap, ok := rpcErr.(map[string]interface{})
+	if !ok {
+		return false
+	}
+	code, ok := errMap["code"]
+	if !ok {
+		return false
+	}
+	return rpcIDEquals(code, -32001)
+}
+
+func isOverloadError(err error) bool {
+	return errors.Is(err, errCodexOverloaded)
 }
 
 func (r *CodexRunner) readLineWithTimeout(reader *bufio.Reader, timeout time.Duration) ([]byte, error) {
