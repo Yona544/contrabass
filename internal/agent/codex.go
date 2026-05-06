@@ -31,6 +31,8 @@ var (
 	errCodexAlreadyStopped = errors.New("codex process already stopped")
 	errCodexStopFailed     = errors.New("codex process stop failed")
 	errCodexOverloaded     = errors.New("codex app-server overloaded (-32001)")
+	errCodexReadTimeout    = errors.New("codex read timeout")
+	errCodexStreamStalled  = errors.New("codex stream read timeout")
 )
 
 var terminalCodexEventTypes = map[string]struct{}{
@@ -41,6 +43,8 @@ var terminalCodexEventTypes = map[string]struct{}{
 
 type CodexRunner struct {
 	binaryPath         string
+	handshakeTimeout   time.Duration
+	streamReadTimeout  time.Duration
 	timeout            time.Duration
 	logger             *log.Logger
 	options            CodexRunnerOptions
@@ -106,6 +110,7 @@ func NewCodexRunner(binaryPath string, timeout time.Duration) *CodexRunner {
 
 	return &CodexRunner{
 		binaryPath:         binaryPath,
+		handshakeTimeout:   timeout,
 		timeout:            timeout,
 		logger:             log.NewWithOptions(io.Discard, log.Options{}),
 		overloadRetries:    5,
@@ -113,6 +118,11 @@ func NewCodexRunner(binaryPath string, timeout time.Duration) *CodexRunner {
 		overloadStartDelay: 100 * time.Millisecond,
 		procs:              make(map[int]*codexProcess),
 	}
+}
+
+func (r *CodexRunner) WithStreamReadTimeout(d time.Duration) *CodexRunner {
+	r.streamReadTimeout = d
+	return r
 }
 
 // ConfigureCodex attaches workflow-driven codex config that the runner will
@@ -337,7 +347,7 @@ func (r *CodexRunner) Stop(proc *AgentProcess) error {
 			r.logger.Warn("codex process exited with error during stop", "pid", proc.PID, "err", doneErr)
 		}
 		return nil
-	case <-time.After(r.timeout):
+	case <-time.After(r.handshakeTimeout):
 		if state.cmd.Process == nil {
 			return fmt.Errorf("%w: pid %d", errCodexAlreadyStopped, proc.PID)
 		}
@@ -353,7 +363,7 @@ func (r *CodexRunner) Stop(proc *AgentProcess) error {
 				r.logger.Warn("codex process exited with error after kill", "pid", proc.PID, "err", doneErr)
 			}
 			return nil
-		case <-time.After(r.timeout):
+		case <-time.After(r.handshakeTimeout):
 			return fmt.Errorf("%w: timeout after kill", errCodexStopFailed)
 		}
 	}
@@ -368,7 +378,7 @@ func (r *CodexRunner) streamEventsAndWait(process *codexProcess, reader *bufio.R
 	var readErr error
 
 	for {
-		line, err := reader.ReadBytes('\n')
+		line, err := r.readStreamLine(reader)
 		if len(line) == 0 {
 			if err != nil {
 				if !errors.Is(err, io.EOF) {
@@ -458,9 +468,12 @@ func (r *CodexRunner) streamEventsAndWait(process *codexProcess, reader *bufio.R
 		}
 	}
 
+	if isStreamReadTimeout(readErr) && process.cmd.Process != nil {
+		_ = process.cmd.Process.Kill()
+	}
 	waitErr := process.cmd.Wait()
 	<-process.stderrDone
-	if waitErr != nil {
+	if waitErr != nil && !isStreamReadTimeout(readErr) {
 		process.finish(r.withStderr(waitErr, process.stderr))
 	} else if readErr != nil {
 		process.finish(readErr)
@@ -509,15 +522,18 @@ func (r *CodexRunner) cleanupOnStartFailure(process *codexProcess) {
 }
 
 func (r *CodexRunner) awaitResponse(reader *bufio.Reader, requestID int) (map[string]interface{}, error) {
-	deadline := time.Now().Add(r.timeout)
+	deadline := time.Now().Add(r.handshakeTimeout)
 
 	for {
 		remaining := time.Until(deadline)
 		if remaining <= 0 {
-			return nil, fmt.Errorf("handshake timeout waiting for response id=%d after %s", requestID, r.timeout)
+			return nil, fmt.Errorf("handshake timeout waiting for response id=%d after %s", requestID, r.handshakeTimeout)
 		}
 
 		line, err := r.readLineWithTimeout(reader, remaining)
+		if errors.Is(err, errCodexReadTimeout) {
+			return nil, fmt.Errorf("handshake timeout waiting for read after %s", remaining)
+		}
 		if err != nil && !errors.Is(err, io.EOF) {
 			return nil, err
 		}
@@ -634,8 +650,23 @@ func (r *CodexRunner) readLineWithTimeout(reader *bufio.Reader, timeout time.Dur
 	case result := <-resultCh:
 		return result.line, result.err
 	case <-timer.C:
-		return nil, fmt.Errorf("handshake timeout waiting for read after %s", timeout)
+		return nil, fmt.Errorf("%w after %s", errCodexReadTimeout, timeout)
 	}
+}
+
+func (r *CodexRunner) readStreamLine(reader *bufio.Reader) ([]byte, error) {
+	if r.streamReadTimeout <= 0 {
+		return reader.ReadBytes('\n')
+	}
+	line, err := r.readLineWithTimeout(reader, r.streamReadTimeout)
+	if errors.Is(err, errCodexReadTimeout) {
+		return line, fmt.Errorf("%w after %s", errCodexStreamStalled, r.streamReadTimeout)
+	}
+	return line, err
+}
+
+func isStreamReadTimeout(err error) bool {
+	return errors.Is(err, errCodexStreamStalled)
 }
 
 func (r *CodexRunner) sendMessage(writer *bufio.Writer, msg map[string]interface{}) error {

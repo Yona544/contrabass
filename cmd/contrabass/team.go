@@ -169,6 +169,9 @@ func createRunner(cfg *config.WorkflowConfig, teamName string, logger *slog.Logg
 			codexBin = cfg.CodexBinaryPath()
 		}
 		runner := agent.NewCodexRunner(codexBin, 30*time.Second)
+		if stallTimeoutMs := cfg.StallTimeoutMs(); stallTimeoutMs > 0 {
+			runner.WithStreamReadTimeout(time.Duration(stallTimeoutMs) * time.Millisecond)
+		}
 		// Forward workflow-driven codex config so the spawned `codex app-server`
 		// uses the workflow's model/approval_policy/sandbox instead of silently
 		// inheriting whatever is in ~/.codex/config.toml. Empty fields are not
