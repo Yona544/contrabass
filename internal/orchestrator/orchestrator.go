@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -255,8 +256,21 @@ func (o *Orchestrator) dispatchUnclaimedIssues(
 	supervisor *errgroup.Group,
 	runSignals chan<- runSignal,
 ) {
+	openIDs := make(map[string]struct{}, len(issues))
+	for _, iss := range issues {
+		if iss.Identifier != "" {
+			openIDs[iss.Identifier] = struct{}{}
+		}
+	}
+
 	for _, issue := range issues {
 		if issue.State != types.Unclaimed {
+			continue
+		}
+		if unresolved := unresolvedBlockers(issue.BlockedBy, openIDs); len(unresolved) > 0 {
+			logging.LogIssueEvent(o.logger, issue.ID,
+				"dispatch_skipped_blocked_by",
+				"blockers", strings.Join(unresolved, ","))
 			continue
 		}
 		if !o.canDispatch(cfg.MaxConcurrency()) {
@@ -268,6 +282,23 @@ func (o *Orchestrator) dispatchUnclaimedIssues(
 
 		o.dispatchIssue(ctx, watchCtx, cfg, issue, 1, supervisor, runSignals)
 	}
+}
+
+// unresolvedBlockers returns the subset of blockers that still appear in the
+// open candidate set (i.e. issues currently visible to the orchestrator that
+// have not reached a tracker-terminal state). An empty result means the issue
+// is free to dispatch.
+func unresolvedBlockers(blockedBy []string, openIDs map[string]struct{}) []string {
+	if len(blockedBy) == 0 || len(openIDs) == 0 {
+		return nil
+	}
+	unresolved := make([]string, 0, len(blockedBy))
+	for _, b := range blockedBy {
+		if _, blocked := openIDs[b]; blocked {
+			unresolved = append(unresolved, b)
+		}
+	}
+	return unresolved
 }
 
 func (o *Orchestrator) dispatchIssue(

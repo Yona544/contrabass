@@ -1350,3 +1350,163 @@ func TestEventTypeString_Unknown(t *testing.T) {
 		})
 	}
 }
+
+func TestUnresolvedBlockers(t *testing.T) {
+	cases := []struct {
+		name      string
+		blockedBy []string
+		openIDs   map[string]struct{}
+		want      []string
+	}{
+		{
+			name:      "empty blockedBy",
+			blockedBy: nil,
+			openIDs:   map[string]struct{}{"X": {}},
+			want:      nil,
+		},
+		{
+			name:      "empty openIDs",
+			blockedBy: []string{"X"},
+			openIDs:   map[string]struct{}{},
+			want:      nil,
+		},
+		{
+			name:      "single match",
+			blockedBy: []string{"X"},
+			openIDs:   map[string]struct{}{"X": {}},
+			want:      []string{"X"},
+		},
+		{
+			name:      "no match",
+			blockedBy: []string{"X"},
+			openIDs:   map[string]struct{}{"Y": {}},
+			want:      []string{},
+		},
+		{
+			name:      "partial match preserves only the open subset",
+			blockedBy: []string{"X", "Y"},
+			openIDs:   map[string]struct{}{"X": {}},
+			want:      []string{"X"},
+		},
+		{
+			name:      "all match preserves input order",
+			blockedBy: []string{"X", "Y"},
+			openIDs:   map[string]struct{}{"X": {}, "Y": {}},
+			want:      []string{"X", "Y"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := unresolvedBlockers(tc.blockedBy, tc.openIDs)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestDispatchUnclaimedIssues_GatesOnBlockedBy(t *testing.T) {
+	t.Run("blocker present in batch skips dependent", func(t *testing.T) {
+		mt := newObservingTracker([]types.Issue{
+			{ID: "ISS-1", Identifier: "ZII-49", Title: "Blocker", State: types.Unclaimed},
+			{ID: "ISS-2", Identifier: "ZII-50", Title: "Blocked", State: types.Unclaimed,
+				BlockedBy: []string{"ZII-49"}},
+		})
+		mw := workspace.NewMockManager(t.TempDir())
+		mr := &agent.MockRunner{
+			Events: []types.AgentEvent{},  // never completes naturally
+			Delay:  10 * time.Second,      // hold the agent open while we observe
+		}
+		cfg := &staticConfig{cfg: testConfig()}
+		orch := NewOrchestrator(mt, mw, mr, cfg, nil)
+		go func() {
+			for range orch.Events() {
+			}
+		}()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		done := startOrchestrator(ctx, orch)
+
+		require.Eventually(t, func() bool {
+			return mt.ClaimCount("ISS-1") > 0
+		}, 1*time.Second, 10*time.Millisecond, "blocker should be claimed")
+
+		// Allow several poll cycles (poll interval is 10ms in testConfig).
+		time.Sleep(200 * time.Millisecond)
+		require.Equal(t, 0, mt.ClaimCount("ISS-2"),
+			"blocked issue must not be claimed while blocker is in candidate set")
+
+		cancel()
+		require.NoError(t, <-done)
+	})
+
+	t.Run("blocker absent from batch dispatches dependent", func(t *testing.T) {
+		// Only the dependent is in the tracker; its blocker has presumably
+		// reached a terminal state and is no longer fetched. The gate should
+		// allow dispatch.
+		mt := newObservingTracker([]types.Issue{
+			{ID: "ISS-2", Identifier: "ZII-50", Title: "Blocked", State: types.Unclaimed,
+				BlockedBy: []string{"ZII-49"}},
+		})
+		mw := workspace.NewMockManager(t.TempDir())
+		mr := &agent.MockRunner{
+			Events: []types.AgentEvent{{Type: "turn/completed"}},
+			Delay:  10 * time.Millisecond,
+		}
+		cfg := &staticConfig{cfg: testConfig()}
+		orch := NewOrchestrator(mt, mw, mr, cfg, nil)
+		go func() {
+			for range orch.Events() {
+			}
+		}()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		done := startOrchestrator(ctx, orch)
+
+		require.Eventually(t, func() bool {
+			return mt.ClaimCount("ISS-2") > 0
+		}, 1*time.Second, 10*time.Millisecond,
+			"dependent should be claimed when blocker is not in candidate set")
+
+		cancel()
+		require.NoError(t, <-done)
+	})
+
+	t.Run("multiple blockers — only unresolved subset gates", func(t *testing.T) {
+		// ZII-44 is an open issue in the batch; ZII-49 is not.
+		// ISS-2 has BlockedBy=[ZII-49, ZII-44] → unresolved subset is [ZII-44]
+		// → ISS-2 is skipped.
+		mt := newObservingTracker([]types.Issue{
+			{ID: "ISS-OPEN", Identifier: "ZII-44", Title: "Open Other", State: types.Unclaimed},
+			{ID: "ISS-2", Identifier: "ZII-50", Title: "Blocked", State: types.Unclaimed,
+				BlockedBy: []string{"ZII-49", "ZII-44"}},
+		})
+		mw := workspace.NewMockManager(t.TempDir())
+		mr := &agent.MockRunner{
+			Events: []types.AgentEvent{},
+			Delay:  10 * time.Second,
+		}
+		cfg := &staticConfig{cfg: testConfig()}
+		orch := NewOrchestrator(mt, mw, mr, cfg, nil)
+		go func() {
+			for range orch.Events() {
+			}
+		}()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		done := startOrchestrator(ctx, orch)
+
+		require.Eventually(t, func() bool {
+			return mt.ClaimCount("ISS-OPEN") > 0
+		}, 1*time.Second, 10*time.Millisecond)
+
+		time.Sleep(200 * time.Millisecond)
+		require.Equal(t, 0, mt.ClaimCount("ISS-2"),
+			"dependent must be skipped while any blocker remains in batch")
+
+		cancel()
+		require.NoError(t, <-done)
+	})
+}
