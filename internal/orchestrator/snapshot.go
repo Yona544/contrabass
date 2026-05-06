@@ -1,9 +1,21 @@
 package orchestrator
 
 import (
+	"context"
+	"os/exec"
+	"regexp"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/junhoyeo/contrabass/internal/types"
+)
+
+var (
+	diffStatCommand        = exec.CommandContext
+	diffStatFilesPattern   = regexp.MustCompile(`(\d+)\s+files?\s+changed`)
+	diffStatAddedPattern   = regexp.MustCompile(`(\d+)\s+insertions?\(\+\)`)
+	diffStatRemovedPattern = regexp.MustCompile(`(\d+)\s+deletions?\(-\)`)
 )
 
 // StateSnapshot represents a thread-safe point-in-time copy of orchestrator state.
@@ -79,9 +91,17 @@ func (o *Orchestrator) Snapshot() StateSnapshot {
 		issuesCopy[id] = issue
 	}
 
-	generatedAt := time.Now()
-
 	o.mu.Unlock()
+
+	for i := range runningEntries {
+		added, removed, files, status := diffStat(context.Background(), runningEntries[i].Workspace)
+		runningEntries[i].DiffAdded = added
+		runningEntries[i].DiffRemoved = removed
+		runningEntries[i].DiffFiles = files
+		runningEntries[i].DiffStatus = status
+	}
+
+	generatedAt := time.Now()
 
 	return StateSnapshot{
 		Stats:       statsCopy,
@@ -90,6 +110,53 @@ func (o *Orchestrator) Snapshot() StateSnapshot {
 		Issues:      issuesCopy,
 		GeneratedAt: generatedAt,
 	}
+}
+
+// diffStat runs `git diff --shortstat HEAD` in the workspace and returns
+// (added, removed, files, status). status is "ok" / "timeout" / "error".
+// On failure the int triple is zeroed and status carries the failure mode.
+func diffStat(ctx context.Context, workspace string) (added, removed, files int, status string) {
+	if strings.TrimSpace(workspace) == "" {
+		return 0, 0, 0, "error"
+	}
+
+	cmdCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+
+	output, err := diffStatCommand(cmdCtx, "git", "-C", workspace, "diff", "--shortstat", "HEAD").Output()
+	if err != nil {
+		if cmdCtx.Err() == context.DeadlineExceeded {
+			return 0, 0, 0, "timeout"
+		}
+		return 0, 0, 0, "error"
+	}
+
+	added, removed, files = parseDiffShortstat(string(output))
+	return added, removed, files, "ok"
+}
+
+func parseDiffShortstat(output string) (added, removed, files int) {
+	line := strings.TrimSpace(output)
+	if line == "" {
+		return 0, 0, 0
+	}
+
+	files = parseFirstInt(diffStatFilesPattern, line)
+	added = parseFirstInt(diffStatAddedPattern, line)
+	removed = parseFirstInt(diffStatRemovedPattern, line)
+	return added, removed, files
+}
+
+func parseFirstInt(pattern *regexp.Regexp, input string) int {
+	matches := pattern.FindStringSubmatch(input)
+	if len(matches) < 2 {
+		return 0
+	}
+	value, err := strconv.Atoi(matches[1])
+	if err != nil {
+		return 0
+	}
+	return value
 }
 
 func formatSnapshotTime(t time.Time) string {
