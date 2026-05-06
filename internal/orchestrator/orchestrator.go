@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"context"
 	"errors"
+	"os/exec"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -335,6 +336,13 @@ func (o *Orchestrator) dispatchIssue(
 		return
 	}
 	runAttempt.WorkspacePath = workspacePath
+	sha, err := workspaceHeadSHA(ctx, workspacePath)
+	if err != nil {
+		o.logger.Warn("claim_head_sha_unavailable",
+			"issue_id", issue.ID, "err", err)
+		sha = ""
+	}
+	runAttempt.ClaimHeadSha = sha
 
 	if phaseErr := TransitionRunPhase(runAttempt.Phase, types.BuildingPrompt); phaseErr == nil {
 		runAttempt.Phase = types.BuildingPrompt
@@ -449,6 +457,20 @@ func (o *Orchestrator) claimIssue(ctx context.Context, issue types.Issue) error 
 
 	logging.LogIssueEvent(o.logger, issue.ID, "claimed")
 	return nil
+}
+
+// workspaceHeadSHA returns the 40-char HEAD SHA of the workspace's current
+// branch. Caller logs/handles the error and falls back to an empty SHA, which
+// the verifier will treat as "unknown".
+func workspaceHeadSHA(ctx context.Context, workspace string) (string, error) {
+	cmdCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	output, err := exec.CommandContext(cmdCtx, "git", "-C", workspace, "rev-parse", "HEAD").Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(output)), nil
 }
 
 func (o *Orchestrator) watchProcess(
