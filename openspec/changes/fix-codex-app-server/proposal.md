@@ -57,6 +57,17 @@ The six defects live in:
    conflation forces operators to either tolerate slow handshakes
    (bumping `r.timeout`) or quick stalls (lowering it) — never both.
 
+7. **codex exec mode does not exit by itself after `turn/completed`** —
+   it idles waiting for further input (codex was designed for an
+   interactive driver). contrabass treats this idle as a stall; after
+   `stall_timeout_ms` (default 60s) it synthesizes a
+   `finished status=Failed err=""` and routes the run to backoff. The
+   net effect: every successful single-turn run looks like a 60-second
+   wait followed by a synthetic failure. Live evidence from the
+   verify-success-with-diff demo: ZII-44 and ZII-47 each emitted
+   `turn/completed`, then *exactly* 60 seconds later contrabass wrote
+   `finished status=Failed err=""` and enqueued a retry.
+
 ## What Changes
 
 - **Wire-format completeness** (defect 1): `thread/start` and
@@ -94,6 +105,16 @@ The six defects live in:
   `handshakeTimeout` (back-compat default 30s). Add an opt-in
   `WithStreamReadTimeout` setter for the orchestrator to wire from
   `WorkflowConfig.StallTimeoutMs`.
+
+- **Finalize codex exec on terminal turn events** (defect 7): inside
+  `streamEventsAndWait`, after parsing an event whose type is in
+  `terminalCodexEventTypes` (`turn/completed`, `turn/failed`,
+  `turn/cancelled`), the runner SHALL close its stdin pipe to signal
+  end-of-input to codex. codex reacts by exiting cleanly; the
+  existing `process.cmd.Wait()` then returns nil, the orchestrator
+  routes through its normal success / failure handler, and verify
+  gates (`verify-success-with-diff`) remain authoritative. No more
+  60-second stall window.
 
 ## Impact
 

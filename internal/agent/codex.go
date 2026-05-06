@@ -76,7 +76,21 @@ type codexProcess struct {
 	stderr     *safeBuffer
 	stderrDone chan struct{}
 
-	doneOnce sync.Once
+	doneOnce       sync.Once
+	stdinCloseOnce sync.Once
+}
+
+// closeStdin closes the codex subprocess's stdin pipe at most once.
+// Codex exec mode requires EOF on stdin to exit cleanly after a
+// terminal turn event (turn/completed, turn/failed, turn/cancelled);
+// without it the subprocess sits idle waiting for the next prompt and
+// contrabass's stall detector synthesizes a spurious failure.
+func (p *codexProcess) closeStdin() {
+	p.stdinCloseOnce.Do(func() {
+		if p.stdin != nil {
+			_ = p.stdin.Close()
+		}
+	})
 }
 
 type safeBuffer struct {
@@ -329,9 +343,7 @@ func (r *CodexRunner) Stop(proc *AgentProcess) error {
 		return fmt.Errorf("%w: pid %d", errCodexAlreadyStopped, proc.PID)
 	}
 
-	if state.stdin != nil {
-		_ = state.stdin.Close()
-	}
+	state.closeStdin()
 
 	if state.cmd.Process == nil {
 		return fmt.Errorf("%w: pid %d", errCodexAlreadyStopped, proc.PID)
@@ -460,6 +472,16 @@ func (r *CodexRunner) streamEventsAndWait(process *codexProcess, reader *bufio.R
 		}
 		r.sendStreamEvent(process.streamCtx, events, event)
 
+		// codex exec idles on stdin after a terminal turn event. Closing
+		// stdin signals end-of-input so codex finishes its bookkeeping
+		// (notify-hook, exit) instead of letting contrabass's
+		// stall_timeout synthesize a spurious failure. The Once guard
+		// makes this safe even if the stream emits multiple terminal
+		// events back-to-back.
+		if _, terminal := terminalCodexEventTypes[event.Type]; terminal {
+			process.closeStdin()
+		}
+
 		if err != nil {
 			if !errors.Is(err, io.EOF) {
 				readErr = err
@@ -505,9 +527,7 @@ func (r *CodexRunner) sendStreamEvent(streamCtx context.Context, events chan typ
 }
 
 func (r *CodexRunner) cleanupOnStartFailure(process *codexProcess) {
-	if process.stdin != nil {
-		_ = process.stdin.Close()
-	}
+	process.closeStdin()
 	if process.cmd.Process != nil {
 		_ = process.cmd.Process.Kill()
 	}

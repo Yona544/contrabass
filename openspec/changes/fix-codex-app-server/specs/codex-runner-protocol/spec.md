@@ -177,3 +177,50 @@ configure the per-line read budget and SHALL be invoked by
 - WHEN the streaming loop runs against a healthy codex stub
 - THEN behavior is identical to today's runner: the loop reads until
   the underlying reader returns EOF, with no per-line deadline.
+
+### Requirement: Codex runner SHALL finalize the subprocess after a terminal turn event
+
+After `streamEventsAndWait` parses an event whose `Type` is in
+`terminalCodexEventTypes` (`turn/completed`, `turn/failed`,
+`turn/cancelled`), the runner SHALL close codex's stdin pipe exactly
+once via a `sync.Once` guard on `codexProcess`. The streaming loop
+SHALL continue to drain remaining stdout lines until natural EOF,
+and the existing `process.cmd.Wait()` path remains the single source
+of truth for the runner's exit status.
+
+#### Scenario: turn/completed triggers stdin close and clean exit
+
+- GIVEN a stub app-server that completes the handshake and emits
+  `turn/completed`, then sits idle on stdin and exits 0 only when
+  it observes EOF
+- WHEN the runner streams the events
+- THEN the runner closes stdin within ~50 ms of receiving
+  `turn/completed`, the stub then exits 0, and
+  `process.cmd.Wait()` returns nil; the parent contrabass code path
+  observes a clean run termination (no synthetic `Failed` from
+  `stall_timeout_ms`).
+
+#### Scenario: turn/failed triggers stdin close
+
+- GIVEN a stub that emits `turn/failed` instead of `turn/completed`
+- WHEN the runner streams the event
+- THEN the runner still closes stdin and `process.cmd.Wait()`
+  returns the underlying exit status; the runner does NOT synthesize
+  an extra failure on top of codex's own failure signal.
+
+#### Scenario: Multiple terminal events in a single run do not double-close
+
+- GIVEN a (degenerate) stub that emits `turn/completed` followed by
+  another `turn/cancelled`
+- WHEN both events arrive at `streamEventsAndWait`
+- THEN stdin is closed exactly once (no panic, no error from
+  duplicate close), and the runner exits the loop cleanly.
+
+#### Scenario: `Stop()` after a terminal event is idempotent
+
+- GIVEN `Stop()` is called after `turn/completed` has already
+  triggered stdin close
+- WHEN `Stop()` runs
+- THEN it does not panic and does not log an error about
+  already-closed stdin; codex's exit is allowed to complete
+  naturally per the existing graceful-stop budget.

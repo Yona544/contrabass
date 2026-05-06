@@ -149,6 +149,40 @@ Workflow plumbing: `cmd/contrabass/team.go::createRunner` checks for
 `runner.WithStreamReadTimeout(...)`. Existing workflows that don't
 set `stall_timeout_ms` see no behavior change.
 
+### Decision 7: Close stdin after the first terminal turn event to finalize codex exec
+
+`codex exec` semantics are "drive a single conversation through stdin
+until input ends". After `turn/completed` (or `turn/failed` /
+`turn/cancelled`), codex's app-server is done with the current turn
+but does not voluntarily emit a separate `finished` event nor exit —
+it sits in an idle read on stdin awaiting follow-up. Symphony Elixir
+drove codex interactively (Elixir port could keep stdin open across
+turns), so this idle was natural. contrabass runs codex one-shot per
+issue and then expects clean termination, so the same idle reads as
+a stall and contrabass synthesizes
+`finished status=Failed err=""` after `stall_timeout_ms`.
+
+The fix is a one-liner with a clean trigger: when
+`streamEventsAndWait` parses an event whose type is in
+`terminalCodexEventTypes` (already defined in T5 for terminal-event
+delivery), call `process.stdin.Close()` exactly once. codex receives
+EOF, finishes its bookkeeping (e.g. final `notify-hook`), and exits
+cleanly. The existing `process.cmd.Wait()` path observes
+`exitErr == nil` and the orchestrator transitions through the normal
+"finished" handling.
+
+This deliberately does NOT add a new event type, NOT add a new
+config knob, and NOT change the orchestrator-side semantics. The
+stall-detection path is preserved as a backstop for cases where
+codex genuinely hangs after a non-terminal event (e.g. a stuck MCP
+tool call).
+
+A `sync.Once` field on `codexProcess` guards the close — multiple
+terminal events in the same stream (rare but legal) MUST not cause a
+double-close panic. The existing `cleanupOnStartFailure` and
+`Stop()` paths already close stdin; both gain idempotency under the
+new `Once`.
+
 ## Risks / Trade-offs
 
 - **Risk**: codex changes its overload code from `-32001` to something

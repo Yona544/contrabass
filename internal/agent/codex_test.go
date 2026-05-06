@@ -667,6 +667,101 @@ func eventDataMap(t *testing.T, event types.AgentEvent, key string) map[string]i
 	return value
 }
 
+// trackingWriteCloser is an in-memory stdin substitute that counts how
+// many times Close() was invoked. Used by T8 tests to assert that
+// closeStdin's sync.Once guard fires exactly once even when the
+// runner observes multiple terminal events.
+type trackingWriteCloser struct {
+	mu         sync.Mutex
+	buf        bytes.Buffer
+	closeCount int
+}
+
+func (w *trackingWriteCloser) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.Write(p)
+}
+
+func (w *trackingWriteCloser) Close() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.closeCount++
+	return nil
+}
+
+func (w *trackingWriteCloser) CloseCount() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.closeCount
+}
+
+// startedExitedCodexProcessWithStdin mirrors startedExitedCodexProcess
+// but installs a trackingWriteCloser as stdin so tests can observe
+// closeStdin invocations.
+func startedExitedCodexProcessWithStdin(t *testing.T, ctx context.Context) (*codexProcess, *trackingWriteCloser) {
+	t.Helper()
+	stdin := &trackingWriteCloser{}
+	cmd := exec.CommandContext(ctx, "sh", "-c", "exit 0")
+	require.NoError(t, cmd.Start())
+	stderrDone := make(chan struct{})
+	close(stderrDone)
+	return &codexProcess{
+		cmd:        cmd,
+		stdin:      stdin,
+		streamCtx:  ctx,
+		done:       make(chan error, 1),
+		stderr:     &safeBuffer{},
+		stderrDone: stderrDone,
+	}, stdin
+}
+
+func TestCodexRunner_StdinClosesAfterTerminalEvent(t *testing.T) {
+	runner := NewCodexRunner("unused", 5*time.Second)
+	input := bytes.Buffer{}
+	writeJSONLine(t, &input, map[string]interface{}{"method": "item/started", "params": map[string]interface{}{}})
+	writeJSONLine(t, &input, map[string]interface{}{"method": "turn/completed", "params": map[string]interface{}{}})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	process, stdin := startedExitedCodexProcessWithStdin(t, ctx)
+	eventsCh := make(chan types.AgentEvent, 16)
+	go runner.streamEventsAndWait(process, bufio.NewReader(bytes.NewReader(input.Bytes())), eventsCh)
+
+	events := collectEvents(t, eventsCh, process.done, 2, 5*time.Second)
+	require.Len(t, events, 2)
+	assert.Equal(t, "turn/completed", events[1].Type)
+	assertDoneEventually(t, process.done)
+
+	assert.Equal(t, 1, stdin.CloseCount(),
+		"closeStdin must fire exactly once after a terminal event")
+}
+
+func TestCodexRunner_StdinCloseIsIdempotent(t *testing.T) {
+	runner := NewCodexRunner("unused", 5*time.Second)
+	input := bytes.Buffer{}
+	writeJSONLine(t, &input, map[string]interface{}{"method": "turn/completed", "params": map[string]interface{}{}})
+	writeJSONLine(t, &input, map[string]interface{}{"method": "turn/cancelled", "params": map[string]interface{}{}})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	process, stdin := startedExitedCodexProcessWithStdin(t, ctx)
+	eventsCh := make(chan types.AgentEvent, 16)
+	go runner.streamEventsAndWait(process, bufio.NewReader(bytes.NewReader(input.Bytes())), eventsCh)
+
+	events := collectEvents(t, eventsCh, process.done, 2, 5*time.Second)
+	require.Len(t, events, 2)
+	assertDoneEventually(t, process.done)
+
+	assert.Equal(t, 1, stdin.CloseCount(),
+		"two terminal events back-to-back must still close stdin only once")
+
+	// Calling closeStdin manually a third time must remain a no-op.
+	process.closeStdin()
+	assert.Equal(t, 1, stdin.CloseCount(),
+		"sync.Once guard must hold across direct closeStdin calls")
+}
+
 func writeJSONLine(t *testing.T, buf *bytes.Buffer, v map[string]interface{}) {
 	t.Helper()
 	payload, err := json.Marshal(v)

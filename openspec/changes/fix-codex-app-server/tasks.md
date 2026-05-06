@@ -301,6 +301,60 @@ is sufficient — see existing `MockRunner` for inspiration). Tests:
 
 ---
 
+## T8 — Close codex stdin after the first terminal turn event
+
+**Files**: `internal/agent/codex.go`, `internal/agent/codex_test.go`.
+
+**Contract**:
+
+- Add a `sync.Once` field to `codexProcess` named `stdinCloseOnce`.
+- All sites that currently call `process.stdin.Close()` (today:
+  `cleanupOnStartFailure`, `Stop()`'s force-shutdown path) SHALL be
+  routed through a small helper:
+
+  ```go
+  func (p *codexProcess) closeStdin() {
+      p.stdinCloseOnce.Do(func() {
+          if p.stdin != nil {
+              _ = p.stdin.Close()
+          }
+      })
+  }
+  ```
+- Inside `streamEventsAndWait`, after the existing
+  `terminal := terminalCodexEventTypes[event.Type]` branch (added in
+  T5) — i.e. on the same turn that the runner blocks-or-drops the
+  event — call `process.closeStdin()`. Place the call *after* the
+  blocking send succeeds (or after the context-cancel branch fires)
+  so the consumer is guaranteed to have seen the terminal event
+  before codex is told to exit.
+- No change to `process.cmd.Wait()` semantics: it remains the
+  single source of truth for the runner's exit status. Tests added
+  in T7 keep passing.
+
+**Acceptance**:
+- `codexProcess` has a `stdinCloseOnce sync.Once` field.
+- `closeStdin()` helper exists and is the only path that calls
+  `process.stdin.Close()` going forward.
+- New unit test
+  `TestCodexRunner_StdinClosesAfterTerminalEvent` (file
+  `internal/agent/codex_test.go`) drives a stub that emits
+  `turn/completed`, sits idle on stdin, exits 0 only on EOF. Asserts
+  that the runner exits cleanly within a small budget (e.g. 2 s)
+  *without* relying on any `streamReadTimeout` deadline.
+- New unit test
+  `TestCodexRunner_StdinCloseIsIdempotent` constructs a runner whose
+  stub emits `turn/completed` AND `turn/cancelled` in sequence;
+  asserts no panic, no goroutine leak, runner exits cleanly.
+- `go test ./internal/agent/ -run TestCodexRunner -count=1 -race -v`
+  remains green for every test added in T7.
+- `go vet ./...` clean.
+
+**Depends on**: T5 (uses `terminalCodexEventTypes`).
+**Blocks**: none.
+
+---
+
 ## Rejection rules (apply to ALL tasks)
 
 A diff that satisfies any of the following MUST be rejected:
@@ -324,11 +378,12 @@ A diff that satisfies any of the following MUST be rejected:
 ```
 T1 ─┐
 T2 ── T3 ─┤
-T4 ── T5  │── T7
-T6 ───────┘
+T4 ── T5 ──── T8 ─┤
+T6 ──────────────┴── T7
 ```
 
 T1, T2, T4, T6 may proceed in parallel after kickoff. T3 follows T2.
 T5 follows T4 (so the terminal-event guard reads through the new
-loop). T7 ties them together; no sub-task of T7 may run before its
+loop). T8 follows T5 (it consumes the same terminal event set). T7
+ties everything together; no sub-task of T7 may run before its
 dependency's production code lands.
