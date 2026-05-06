@@ -116,6 +116,10 @@ func (r *TmuxRunner) Start(ctx context.Context, issue types.Issue, workspace str
 		return nil, errors.New("tmux cli registry is nil")
 	}
 
+	if err := r.session.CreateIfNotExists(ctx); err != nil {
+		return nil, fmt.Errorf("ensure tmux session %q: %w", r.session.Name, err)
+	}
+
 	cliCfg, err := r.registry.Get(r.agentType)
 	if err != nil {
 		return nil, fmt.Errorf("resolve tmux cli config: %w", err)
