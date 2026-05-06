@@ -50,11 +50,22 @@ func (m *Manager) Create(ctx context.Context, issue types.Issue) (string, error)
 		}
 	}
 
+	// If the path already exists, only reuse it when it is a registered git
+	// worktree. A bare directory left behind by a previous crashed run
+	// (containing only `.omx/` or `.contrabass/` subdirs) must be torn down
+	// before `git worktree add` can succeed; otherwise omx launches in what
+	// looks like the parent repo's working tree and fails the
+	// `leader_workspace_dirty` check.
 	if info, err := os.Stat(workspacePath); err == nil && info.IsDir() {
-		m.mu.Lock()
-		m.active[issue.ID] = workspacePath
-		m.mu.Unlock()
-		return workspacePath, nil
+		if m.isRegisteredWorktree(ctx, workspacePath) {
+			m.mu.Lock()
+			m.active[issue.ID] = workspacePath
+			m.mu.Unlock()
+			return workspacePath, nil
+		}
+		if err := os.RemoveAll(workspacePath); err != nil {
+			return "", fmt.Errorf("clean stale workspace dir for issue %s: %w", issue.ID, err)
+		}
 	}
 
 	if err := os.MkdirAll(filepath.Dir(workspacePath), 0o755); err != nil {
@@ -159,6 +170,28 @@ func (m *Manager) lockIssue(issueID string) func() {
 	mu := issueLock.(*sync.Mutex)
 	mu.Lock()
 	return mu.Unlock
+}
+
+// isRegisteredWorktree returns true when path appears in `git worktree list`.
+// Used to distinguish real worktrees from bare directories left by crashed
+// runs so Create knows which paths are safe to reuse vs. tear down.
+func (m *Manager) isRegisteredWorktree(ctx context.Context, path string) bool {
+	output, err := m.runGit(ctx, "worktree", "list", "--porcelain")
+	if err != nil {
+		return false
+	}
+	abs, absErr := filepath.Abs(path)
+	if absErr != nil {
+		abs = path
+	}
+	for _, line := range strings.Split(output, "\n") {
+		if rest, ok := strings.CutPrefix(line, "worktree "); ok {
+			if strings.TrimSpace(rest) == abs {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (m *Manager) runGit(ctx context.Context, args ...string) (string, error) {
