@@ -17,15 +17,25 @@ type StateSnapshot struct {
 
 // RunningEntry represents a running issue execution in the snapshot.
 type RunningEntry struct {
-	IssueID   string         `json:"issue_id"`
-	Attempt   int            `json:"attempt"`
-	PID       int            `json:"pid"`
-	SessionID string         `json:"session_id"`
-	Workspace string         `json:"workspace"`
-	StartedAt time.Time      `json:"started_at"`
-	Phase     types.RunPhase `json:"phase"`
-	TokensIn  int64          `json:"tokens_in"`
-	TokensOut int64          `json:"tokens_out"`
+	IssueID          string         `json:"issue_id"`
+	Attempt          int            `json:"attempt"`
+	PID              int            `json:"pid"`
+	SessionID        string         `json:"session_id"`
+	Workspace        string         `json:"workspace"`
+	StartedAt        time.Time      `json:"started_at"`
+	Phase            types.RunPhase `json:"phase"`
+	PhaseLabel       string         `json:"phase_label"`
+	TokensIn         int64          `json:"tokens_in"`
+	TokensOut        int64          `json:"tokens_out"`
+	LastActivityAt   string         `json:"last_activity_at"`
+	LastActivityKind string         `json:"last_activity_kind"`
+	LastHeartbeatAt  string         `json:"last_heartbeat_at"`
+	Iteration        int            `json:"iteration"`
+	IterationMax     int            `json:"iteration_max"`
+	DiffAdded        int            `json:"diff_added"`
+	DiffRemoved      int            `json:"diff_removed"`
+	DiffFiles        int            `json:"diff_files"`
+	DiffStatus       string         `json:"diff_status"`
 }
 
 // Snapshot returns a thread-safe point-in-time copy of orchestrator state.
@@ -42,15 +52,17 @@ func (o *Orchestrator) Snapshot() StateSnapshot {
 	runningEntries := make([]RunningEntry, 0, len(o.running))
 	for _, entry := range o.running {
 		runningEntries = append(runningEntries, RunningEntry{
-			IssueID:   entry.issue.ID,
-			Attempt:   entry.attempt.Attempt,
-			PID:       entry.attempt.PID,
-			SessionID: entry.attempt.SessionID,
-			Workspace: entry.workspace,
-			StartedAt: entry.attempt.StartTime,
-			Phase:     entry.attempt.Phase,
-			TokensIn:  entry.attempt.TokensIn,
-			TokensOut: entry.attempt.TokensOut,
+			IssueID:    entry.issue.ID,
+			Attempt:    entry.attempt.Attempt,
+			PID:        entry.attempt.PID,
+			SessionID:  entry.attempt.SessionID,
+			Workspace:  entry.workspace,
+			StartedAt:  entry.attempt.StartTime,
+			Phase:      entry.attempt.Phase,
+			PhaseLabel: entry.attempt.Phase.Label(),
+			TokensIn:   entry.attempt.TokensIn,
+			TokensOut:  entry.attempt.TokensOut,
+			DiffStatus: "ok",
 		})
 	}
 

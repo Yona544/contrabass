@@ -80,6 +80,28 @@ func (p RunPhase) String() string {
 	}
 }
 
+// Label returns the dashboard-facing label for a run phase.
+func (p RunPhase) Label() string {
+	switch p {
+	case PreparingWorkspace, BuildingPrompt:
+		return "PreparingWorkspace"
+	case LaunchingAgentProcess, InitializingSession:
+		return "RunningAgent"
+	case StreamingTurn:
+		return "AgentRunning"
+	case Finishing:
+		return "Releasing"
+	case Succeeded:
+		return "Done"
+	case Failed, TimedOut, Stalled:
+		return "Failed"
+	case CanceledByReconciliation:
+		return "Canceled"
+	default:
+		return ""
+	}
+}
+
 // Issue represents a normalized issue record from the tracker.
 type Issue struct {
 	ID            string                 `json:"id"`
