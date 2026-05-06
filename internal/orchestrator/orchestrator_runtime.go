@@ -264,6 +264,7 @@ func (o *Orchestrator) enqueueBackoffFromRunResult(ctx context.Context, issue ty
 		"issue_id", issue.ID,
 		"attempt", nextAttempt,
 		"retry_at", retryAt,
+		"err", attempt.Error,
 	)
 }
 
