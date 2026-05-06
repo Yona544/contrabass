@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { Header } from './components/Header'
 import { MetricCards } from './components/MetricCards'
 import { RateLimits } from './components/RateLimits'
+import { QueuePanel } from './components/QueuePanel'
 import { RetryQueue } from './components/RetryQueue'
 import { SessionsTable } from './components/SessionsTable'
 import { TeamTable } from './components/TeamTable'
@@ -27,7 +28,7 @@ function computeRuntimeSeconds(startTime: string | undefined): number {
 }
 
 function App() {
-  const { state, connected, error, teamSnapshot, boardIssues, agentLogs } = useSSE()
+  const { state, connected, error, teamSnapshot, boardIssues, agentLogs, queueEvents } = useSSE()
   const [runtimeSeconds, setRuntimeSeconds] = useState(0)
   const startTime = state?.stats.StartTime
 
@@ -98,6 +99,11 @@ function App() {
         </div>
 
         <aside className="dashboard__sidebar">
+          <section className="dashboard__section">
+            <h2 className="dashboard__section-label">Queue</h2>
+            <QueuePanel events={queueEvents} />
+          </section>
+
           <section className="dashboard__section">
             <h2 className="dashboard__section-label">{zhCN.app.sections.retryQueue}</h2>
             <RetryQueue entries={state.backoff ?? []} />

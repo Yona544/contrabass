@@ -22,6 +22,7 @@ export interface SSEState {
   teamSnapshot: TeamSnapshot | null
   boardIssues: BoardIssue[]
   agentLogs: AgentLogEvent[]
+  queueEvents: QueueEventPayload[]
 }
 
 export type SSEAction =
@@ -59,6 +60,12 @@ interface IssueReleasedData {
   Attempt: number
 }
 
+export interface QueueEventPayload {
+  issue_id: string
+  identifier: string
+  blockers: string
+}
+
 export const INITIAL_STATE: SSEState = {
   state: null,
   connected: false,
@@ -66,6 +73,7 @@ export const INITIAL_STATE: SSEState = {
   teamSnapshot: null,
   boardIssues: [],
   agentLogs: [],
+  queueEvents: [],
 }
 
 const EMPTY_TEAM_SNAPSHOT: TeamSnapshot = {
@@ -306,6 +314,27 @@ function applyAgentLogEvent(state: SSEState, webEvt: WebEvent): SSEState {
   return { ...state, agentLogs: logs }
 }
 
+function applyQueueEvent(state: SSEState, webEvt: WebEvent): SSEState {
+  const payload = asRecord(webEvt.payload)
+  const issueID = typeof payload.issue_id === 'string' ? payload.issue_id : ''
+  if (!issueID) {
+    return state
+  }
+
+  const entry: QueueEventPayload = {
+    issue_id: issueID,
+    identifier: typeof payload.identifier === 'string' ? payload.identifier : issueID,
+    blockers: typeof payload.blockers === 'string' ? payload.blockers : '',
+  }
+
+  const queueEvents = [...state.queueEvents, entry]
+  if (queueEvents.length > 1000) {
+    queueEvents.splice(0, queueEvents.length - 1000)
+  }
+
+  return { ...state, queueEvents }
+}
+
 export function applyEvent(snapshot: StateSnapshot, event: OrchestratorEvent): StateSnapshot {
   switch (event.Type) {
     case 0: {
@@ -409,6 +438,9 @@ export function sseReducer(state: SSEState, action: SSEAction): SSEState {
 
       switch (webEvent.kind) {
         case 'orchestrator':
+          if (webEvent.type === 'dispatch_skipped_blocked_by') {
+            return applyQueueEvent(state, webEvent)
+          }
           if (!state.state) {
             return state
           }
@@ -454,7 +486,15 @@ const BOARD_EVENT_NAMES = ['board_issue_created', 'board_issue_updated', 'board_
 
 const AGENT_LOG_EVENT_NAMES = ['agent_log'] as const
 
-const WEB_EVENT_NAMES = [...EVENT_NAMES, ...TEAM_EVENT_NAMES, ...BOARD_EVENT_NAMES, ...AGENT_LOG_EVENT_NAMES] as const
+const QUEUE_EVENT_NAMES = ['queue'] as const
+
+const WEB_EVENT_NAMES = [
+  ...EVENT_NAMES,
+  ...TEAM_EVENT_NAMES,
+  ...BOARD_EVENT_NAMES,
+  ...AGENT_LOG_EVENT_NAMES,
+  ...QUEUE_EVENT_NAMES,
+] as const
 
 export function useSSE() {
   const [sseState, dispatch] = useReducer(sseReducer, INITIAL_STATE)
