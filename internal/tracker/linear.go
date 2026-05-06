@@ -112,6 +112,12 @@ const fetchIssuesQuery = `query FetchIssues($projectSlug: String!, $first: Int!,
 			labels { nodes { name } }
 			createdAt
 			updatedAt
+			inverseRelations {
+				nodes {
+					type
+					issue { identifier }
+				}
+			}
 		}
 		pageInfo {
 			hasNextPage
@@ -479,7 +485,7 @@ func normalizeIssue(node map[string]interface{}) types.Issue {
 		Labels:        extractLabels(node),
 		URL:           getString(node, "url"),
 		BranchName:    branchName,
-		BlockedBy:     []string{},
+		BlockedBy:     extractBlockedBy(node),
 		ModelOverride: ParseModelOverride(description),
 		CreatedAt:     createdAt,
 		UpdatedAt:     updatedAt,
@@ -540,6 +546,46 @@ func extractLabels(node map[string]interface{}) []string {
 	}
 
 	return labels
+}
+
+// extractBlockedBy returns the identifiers of issues whose inverseRelations
+// of type "blocks" point at this issue. Linear's IssueRelation reads as
+// "issue blocks relatedIssue", so the blockers of THIS issue are the
+// `issue.identifier` values reached through `inverseRelations`. Missing
+// or malformed nodes are skipped; the result is always a non-nil slice.
+func extractBlockedBy(node map[string]interface{}) []string {
+	relationsData, ok := node["inverseRelations"].(map[string]interface{})
+	if !ok {
+		return []string{}
+	}
+
+	relationNodes, ok := relationsData["nodes"].([]interface{})
+	if !ok {
+		return []string{}
+	}
+
+	blockers := make([]string, 0, len(relationNodes))
+	for _, rn := range relationNodes {
+		relMap, ok := rn.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		relType, _ := relMap["type"].(string)
+		if relType != "blocks" {
+			continue
+		}
+		blockerIssue, _ := relMap["issue"].(map[string]interface{})
+		if blockerIssue == nil {
+			continue
+		}
+		identifier, _ := blockerIssue["identifier"].(string)
+		if identifier == "" {
+			continue
+		}
+		blockers = append(blockers, identifier)
+	}
+
+	return blockers
 }
 
 // checkMutationSuccess checks if a mutation response indicates success.

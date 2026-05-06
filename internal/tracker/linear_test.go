@@ -910,3 +910,98 @@ func TestTruncateBody_LongBody(t *testing.T) {
 		})
 	}
 }
+
+func TestNormalizeIssue_BlockedByFromInverseRelations(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		respondJSON(w, 200, map[string]interface{}{
+			"data": map[string]interface{}{
+				"issues": map[string]interface{}{
+					"nodes": []interface{}{
+						// Case 1: one inverse blocks → single-element BlockedBy
+						map[string]interface{}{
+							"id":         "id-50",
+							"identifier": "ZII-50",
+							"state":      map[string]interface{}{"name": "Todo"},
+							"inverseRelations": map[string]interface{}{
+								"nodes": []interface{}{
+									map[string]interface{}{
+										"type":  "blocks",
+										"issue": map[string]interface{}{"identifier": "ZII-49"},
+									},
+								},
+							},
+						},
+						// Case 2: two blocks + one related → only blocks, in input order
+						map[string]interface{}{
+							"id":         "id-51",
+							"identifier": "ZII-51",
+							"state":      map[string]interface{}{"name": "Todo"},
+							"inverseRelations": map[string]interface{}{
+								"nodes": []interface{}{
+									map[string]interface{}{
+										"type":  "blocks",
+										"issue": map[string]interface{}{"identifier": "ZII-49"},
+									},
+									map[string]interface{}{
+										"type":  "related",
+										"issue": map[string]interface{}{"identifier": "ZII-44"},
+									},
+									map[string]interface{}{
+										"type":  "blocks",
+										"issue": map[string]interface{}{"identifier": "ZII-50"},
+									},
+								},
+							},
+						},
+						// Case 3: empty inverseRelations.nodes → []string{}
+						map[string]interface{}{
+							"id":         "id-52",
+							"identifier": "ZII-52",
+							"state":      map[string]interface{}{"name": "Todo"},
+							"inverseRelations": map[string]interface{}{
+								"nodes": []interface{}{},
+							},
+						},
+						// Case 4: blocks node missing issue.identifier → silently skipped,
+						// well-formed sibling preserved
+						map[string]interface{}{
+							"id":         "id-53",
+							"identifier": "ZII-53",
+							"state":      map[string]interface{}{"name": "Todo"},
+							"inverseRelations": map[string]interface{}{
+								"nodes": []interface{}{
+									map[string]interface{}{
+										"type":  "blocks",
+										"issue": map[string]interface{}{},
+									},
+									map[string]interface{}{
+										"type":  "blocks",
+										"issue": map[string]interface{}{"identifier": "ZII-49"},
+									},
+									map[string]interface{}{
+										"type": "blocks",
+										// issue field absent entirely
+									},
+								},
+							},
+						},
+					},
+					"pageInfo": map[string]interface{}{"hasNextPage": false},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := testClient(t, server.URL)
+	issues, err := client.FetchIssues(context.Background())
+
+	require.NoError(t, err)
+	require.Len(t, issues, 4)
+
+	assert.Equal(t, []string{"ZII-49"}, issues[0].BlockedBy, "case 1: one inverse blocks")
+	assert.Equal(t, []string{"ZII-49", "ZII-50"}, issues[1].BlockedBy, "case 2: only blocks, in input order")
+	assert.Equal(t, []string{}, issues[2].BlockedBy, "case 3: empty inverseRelations")
+	assert.NotNil(t, issues[2].BlockedBy, "case 3: must be non-nil empty slice")
+	assert.Equal(t, []string{"ZII-49"}, issues[3].BlockedBy, "case 4: malformed nodes skipped, well-formed kept")
+}
