@@ -33,6 +33,12 @@ var (
 	errCodexOverloaded     = errors.New("codex app-server overloaded (-32001)")
 )
 
+var terminalCodexEventTypes = map[string]struct{}{
+	"turn/completed": {},
+	"turn/failed":    {},
+	"turn/cancelled": {},
+}
+
 type CodexRunner struct {
 	binaryPath         string
 	timeout            time.Duration
@@ -61,6 +67,7 @@ type CodexRunnerOptions struct {
 type codexProcess struct {
 	cmd        *exec.Cmd
 	stdin      io.WriteCloser
+	streamCtx  context.Context
 	done       chan error
 	stderr     *safeBuffer
 	stderrDone chan struct{}
@@ -201,6 +208,7 @@ func (r *CodexRunner) Start(ctx context.Context, issue types.Issue, workspace st
 	process := &codexProcess{
 		cmd:        cmd,
 		stdin:      stdin,
+		streamCtx:  ctx,
 		done:       make(chan error, 1),
 		stderr:     stderrBuf,
 		stderrDone: stderrDone,
@@ -286,7 +294,7 @@ func (r *CodexRunner) Start(ctx context.Context, issue types.Issue, workspace st
 		sessionID = threadID + "-" + turnID
 	}
 
-	events := make(chan types.AgentEvent, 128)
+	events := make(chan types.AgentEvent, 512)
 
 	go r.streamEventsAndWait(process, reader, events)
 
@@ -417,10 +425,7 @@ func (r *CodexRunner) streamEventsAndWait(process *codexProcess, reader *bufio.R
 				},
 				Timestamp: time.Now(),
 			}
-			select {
-			case events <- event:
-			default:
-			}
+			r.sendStreamEvent(process.streamCtx, events, event)
 			continue
 		}
 		method, _ := msg["method"].(string)
@@ -443,10 +448,7 @@ func (r *CodexRunner) streamEventsAndWait(process *codexProcess, reader *bufio.R
 			Data:      data,
 			Timestamp: time.Now(),
 		}
-		select {
-		case events <- event:
-		default:
-		}
+		r.sendStreamEvent(process.streamCtx, events, event)
 
 		if err != nil {
 			if !errors.Is(err, io.EOF) {
@@ -468,6 +470,25 @@ func (r *CodexRunner) streamEventsAndWait(process *codexProcess, reader *bufio.R
 	r.mu.Lock()
 	delete(r.procs, process.cmd.Process.Pid)
 	r.mu.Unlock()
+}
+
+func (r *CodexRunner) sendStreamEvent(streamCtx context.Context, events chan types.AgentEvent, event types.AgentEvent) {
+	if streamCtx == nil {
+		streamCtx = context.Background()
+	}
+	if _, terminal := terminalCodexEventTypes[event.Type]; terminal {
+		select {
+		case events <- event:
+		case <-streamCtx.Done():
+			r.logger.Debug("codex stream context cancelled before terminal event delivery", "event", event.Type, "err", streamCtx.Err())
+		}
+		return
+	}
+
+	select {
+	case events <- event:
+	default:
+	}
 }
 
 func (r *CodexRunner) cleanupOnStartFailure(process *codexProcess) {
