@@ -563,5 +563,29 @@ export function useSSE() {
     }
   }, [connect])
 
-  return sseState
+  // Per-issue tokens (running[i].tokens_in/out) and diff stats are only
+  // populated in the initial /api/v1/state snapshot — the StatusUpdate SSE
+  // event carries top-level Stats only. Periodically refetch the full
+  // snapshot so per-row numbers stay live without a manual page reload.
+  const refresh = useCallback(async () => {
+    try {
+      const response = await fetch('/api/v1/state')
+      if (!response.ok) {
+        return
+      }
+      const data = (await response.json()) as StateSnapshot
+      dispatch({ type: 'snapshot', data })
+    } catch {
+      // Silent: SSE will surface connection issues separately.
+    }
+  }, [])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      void refresh()
+    }, 5000)
+    return () => window.clearInterval(timer)
+  }, [refresh])
+
+  return { ...sseState, refresh }
 }
