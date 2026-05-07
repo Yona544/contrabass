@@ -1761,3 +1761,113 @@ func TestDispatchUnclaimedIssues_GatesOnBlockedBy(t *testing.T) {
 		require.NoError(t, <-done)
 	})
 }
+
+// missingBranchWorkspaceManager wraps the mock manager but seeds a real git
+// repo at the workspace path WITHOUT creating issue.BranchName. claimIssue's
+// `git rev-parse HEAD` succeeds (so ClaimHeadSha is populated), but the
+// verify-gate's `git rev-parse <BranchName>` later fails with exit 128 ->
+// reason="git_error", which is exactly the harden-verify-success-gate trigger.
+type missingBranchWorkspaceManager struct {
+	base *workspace.MockManager
+	t    *testing.T
+}
+
+func newMissingBranchWorkspaceManager(t *testing.T, baseDir string) *missingBranchWorkspaceManager {
+	t.Helper()
+	return &missingBranchWorkspaceManager{base: workspace.NewMockManager(baseDir), t: t}
+}
+
+func (w *missingBranchWorkspaceManager) Create(ctx context.Context, issue types.Issue) (string, error) {
+	path, err := w.base.Create(ctx, issue)
+	if err != nil {
+		return "", err
+	}
+	if _, err := os.Stat(filepath.Join(path, ".git")); err == nil {
+		return path, nil
+	}
+	require.NoError(w.t, os.MkdirAll(path, 0o755))
+	gitRun(w.t, path, "init")
+	require.NoError(w.t, os.WriteFile(filepath.Join(path, "baseline.txt"), []byte("x\n"), 0o644))
+	gitRun(w.t, path, "add", "baseline.txt")
+	gitRun(w.t, path, "commit", "-m", "baseline")
+	return path, nil
+}
+
+func (w *missingBranchWorkspaceManager) Cleanup(ctx context.Context, issueID string) error {
+	return w.base.Cleanup(ctx, issueID)
+}
+
+func (w *missingBranchWorkspaceManager) CleanupAll(ctx context.Context) error {
+	return w.base.CleanupAll(ctx)
+}
+
+func TestVerifyGate_GitErrorRoutesToWorkspaceInvalid(t *testing.T) {
+	issue := types.Issue{
+		ID:         "ISS-GITERR",
+		Identifier: "ISS-GITERR",
+		Title:      "git_error fails closed",
+		State:      types.Unclaimed,
+		BranchName: "symphony/iss-giterr",
+	}
+	mt := newObservingTracker([]types.Issue{issue})
+	mw := newMissingBranchWorkspaceManager(t, t.TempDir())
+	cfg := testConfig()
+	cfg.MaxRetryBackoffMsRaw = 5_000
+	mr := &agent.MockRunner{
+		Events: []types.AgentEvent{{Type: "turn/completed"}},
+		Delay:  10 * time.Millisecond,
+	}
+	orch := NewOrchestrator(mt, mw, mr, &staticConfig{cfg: cfg}, nil)
+	events := newEventCollector(orch.Events())
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	done := startOrchestrator(ctx, orch)
+
+	require.Eventually(t, func() bool {
+		return events.BackoffCauseCount(issue.ID, "success_unverified_workspace_invalid") >= 1
+	}, 2*time.Second, 10*time.Millisecond, "git_error must enqueue workspace_invalid backoff")
+	assert.Zero(t, mt.UpdateIssueStateCount(issue.ID, types.Released),
+		"git_error must not fall through to Released")
+
+	cancel()
+	require.NoError(t, <-done)
+}
+
+func TestVerifyGate_NoClaimHeadStillProceedsToReleased(t *testing.T) {
+	issue := types.Issue{
+		ID:         "ISS-NOHEAD",
+		Identifier: "ISS-NOHEAD",
+		Title:      "no_claim_head still releases",
+		State:      types.Unclaimed,
+		BranchName: "symphony/iss-nohead",
+	}
+	mt := newObservingTracker([]types.Issue{issue})
+	// MockManager returns a plain temp dir (no .git), so claimIssue's
+	// workspaceHeadSHA call errors out and ClaimHeadSha stays empty.
+	// verifyBranchAdvanced then returns (true, "no_claim_head", nil) and the
+	// runtime's existing fail-open arm SHALL still release to Done.
+	mw := workspace.NewMockManager(t.TempDir())
+	cfg := testConfig()
+	cfg.MaxRetryBackoffMsRaw = 5_000
+	mr := &agent.MockRunner{
+		Events: []types.AgentEvent{{Type: "turn/completed"}},
+		Delay:  10 * time.Millisecond,
+	}
+	orch := NewOrchestrator(mt, mw, mr, &staticConfig{cfg: cfg}, nil)
+	events := newEventCollector(orch.Events())
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	done := startOrchestrator(ctx, orch)
+
+	require.Eventually(t, func() bool {
+		return mt.UpdateIssueStateCount(issue.ID, types.Released) >= 1
+	}, 2*time.Second, 10*time.Millisecond, "no_claim_head must release to Done")
+	assert.Zero(t, events.BackoffCauseCount(issue.ID, "success_unverified_workspace_invalid"),
+		"no_claim_head must NOT trigger workspace_invalid backoff")
+	assert.Zero(t, events.BackoffCauseCount(issue.ID, "success_unverified_branch_unchanged"))
+
+	cancel()
+	require.NoError(t, <-done)
+}
