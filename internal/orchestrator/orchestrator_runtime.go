@@ -118,6 +118,7 @@ func (o *Orchestrator) completeRun(ctx context.Context, issueID string, doneErr 
 			ctx, finalAttempt.WorkspacePath, entry.issue.BranchName, finalAttempt.ClaimHeadSha)
 		switch {
 		case advanced && reason == "":
+			// branch HEAD advanced — happy path
 		case !advanced && reason == "branch_unchanged":
 			logging.LogIssueEvent(o.logger, issueID,
 				"success_unverified_branch_unchanged",
@@ -128,7 +129,31 @@ func (o *Orchestrator) completeRun(ctx context.Context, issueID string, doneErr 
 			o.enqueueContinuation(issueID, finalAttempt.Attempt,
 				"success_unverified_branch_unchanged")
 			return
+		case advanced && reason == "git_error":
+			// Persistent git failure (e.g. workspace was never a real
+			// worktree) — fail close to prevent rubber-stamped runs.
+			// See harden-verify-success-gate Decision 1.
+			errText := ""
+			if err != nil {
+				errText = err.Error()
+			}
+			logging.LogIssueEvent(o.logger, issueID,
+				"success_unverified_workspace_invalid",
+				"attempt", finalAttempt.Attempt,
+				"branch", entry.issue.BranchName,
+				"head", finalAttempt.ClaimHeadSha,
+				"err", errText,
+			)
+			o.enqueueContinuation(issueID, finalAttempt.Attempt,
+				"success_unverified_workspace_invalid")
+			return
+		case advanced && reason == "no_claim_head":
+			// Empty ClaimHeadSha — claim-time SHA capture failed.
+			// Keep fail-open to preserve retry recovery after restarts.
+			o.logger.Warn("verifier_skipped",
+				"issue_id", issueID, "reason", reason)
 		default:
+			// Unknown future reason — keep fail-open with explicit warn.
 			if err != nil {
 				o.logger.Warn("verifier_skipped",
 					"issue_id", issueID, "reason", reason, "err", err)
