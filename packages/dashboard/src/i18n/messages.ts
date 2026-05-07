@@ -12,7 +12,7 @@ export const zhCN = {
     },
   },
   header: {
-    mascotAlt: 'Contrabass 吉祥物',
+    mascotAlt: 'Ziikoo 吉祥物',
     status: '状态',
     live: '在线',
     offline: '离线',

@@ -22,7 +22,7 @@ export function Header({ connected, runtimeSeconds }: HeaderProps) {
           height={48}
           className="header__logo"
         />
-        <h1 className="header__title header__title--puffy">Contrabass</h1>
+        <h1 className="header__title header__title--puffy">Ziikoo</h1>
       </div>
 
       <div className="header__status">
