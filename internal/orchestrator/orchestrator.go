@@ -15,12 +15,18 @@ import (
 	"github.com/junhoyeo/contrabass/internal/agent"
 	"github.com/junhoyeo/contrabass/internal/config"
 	"github.com/junhoyeo/contrabass/internal/logging"
+	"github.com/junhoyeo/contrabass/internal/timeline"
 	"github.com/junhoyeo/contrabass/internal/tracker"
 	"github.com/junhoyeo/contrabass/internal/types"
 )
 
 const defaultEventBufferSize = 256
 const maxIssueCacheSize = 1000
+
+// ErrAgentNotRunning is returned by StopAgent when no managed run exists for
+// the given issue ID — typically because the agent already finished or the
+// caller's snapshot is stale.
+var ErrAgentNotRunning = errors.New("agent not running")
 
 type WorkspaceManager interface {
 	Create(ctx context.Context, issue types.Issue) (string, error)
@@ -59,17 +65,26 @@ type Orchestrator struct {
 	agent     agent.AgentRunner
 	config    ConfigProvider
 	logger    *log.Logger
+	timeline  *timeline.Store
+
+	suppressLinearLegacyComments bool
 
 	mu           sync.Mutex
 	shutdownOnce sync.Once
 	running      map[string]*runEntry
 	backoff      []types.BackoffEntry
+	paused       map[string]string
 	events       chan OrchestratorEvent
 	eventsClosed atomic.Bool
 	stats        Stats
 
 	issueCache      map[string]types.Issue
 	issueCacheOrder []string
+}
+
+func (o *Orchestrator) SetWorkflowTimeline(store *timeline.Store, suppressLinearLegacyComments bool) {
+	o.timeline = store
+	o.suppressLinearLegacyComments = suppressLinearLegacyComments
 }
 
 type runSignal struct {
@@ -103,6 +118,7 @@ func NewOrchestrator(
 		logger:     logger,
 		running:    make(map[string]*runEntry),
 		backoff:    []types.BackoffEntry{},
+		paused:     make(map[string]string),
 		events:     make(chan OrchestratorEvent, defaultEventBufferSize),
 		issueCache: make(map[string]types.Issue),
 		stats: Stats{
@@ -191,9 +207,26 @@ func (o *Orchestrator) runCycle(ctx context.Context, supervisor *errgroup.Group,
 	}
 	o.mu.Unlock()
 
+	openIDs := buildOpenIDSet(issues)
+
 	o.dispatchReadyBackoff(ctx, supervisorCtxOr(ctx), cfg, issuesByID, supervisor, runSignals)
-	o.dispatchUnclaimedIssues(ctx, supervisorCtxOr(ctx), cfg, issues, supervisor, runSignals)
+	o.recoverOrphanedClaims(issues)
+	o.dispatchUnclaimedIssues(ctx, supervisorCtxOr(ctx), cfg, issues, openIDs, supervisor, runSignals)
+	o.releaseBlockedRunning(ctx, issuesByID, openIDs)
 	o.emitStatusUpdate()
+}
+
+// buildOpenIDSet returns the set of issue identifiers visible in the snapshot
+// (i.e. not in a tracker-terminal state). Used by dispatch and revalidation
+// passes to test BlockedBy membership consistently within a tick.
+func buildOpenIDSet(issues []types.Issue) map[string]struct{} {
+	openIDs := make(map[string]struct{}, len(issues))
+	for _, iss := range issues {
+		if iss.Identifier != "" {
+			openIDs[iss.Identifier] = struct{}{}
+		}
+	}
+	return openIDs
 }
 
 func supervisorCtxOr(ctx context.Context) context.Context {
@@ -257,16 +290,10 @@ func (o *Orchestrator) dispatchUnclaimedIssues(
 	watchCtx context.Context,
 	cfg *config.WorkflowConfig,
 	issues []types.Issue,
+	openIDs map[string]struct{},
 	supervisor *errgroup.Group,
 	runSignals chan<- runSignal,
 ) {
-	openIDs := make(map[string]struct{}, len(issues))
-	for _, iss := range issues {
-		if iss.Identifier != "" {
-			openIDs[iss.Identifier] = struct{}{}
-		}
-	}
-
 	for _, issue := range issues {
 		if issue.State != types.Unclaimed {
 			continue
@@ -286,6 +313,103 @@ func (o *Orchestrator) dispatchUnclaimedIssues(
 
 		o.dispatchIssue(ctx, watchCtx, cfg, issue, 1, supervisor, runSignals)
 	}
+}
+
+// recoverOrphanedClaims overrides the state of any issue that is Claimed in
+// the tracker snapshot but absent from the live managed-issues set. This
+// handles the restart/crash case where Linear still shows "In Progress" but
+// no agent is running: the issue is treated as Unclaimed so it re-enters the
+// dispatch queue on this tick.
+func (o *Orchestrator) recoverOrphanedClaims(issues []types.Issue) {
+	o.mu.Lock()
+	managed := make(map[string]struct{}, len(o.running)+len(o.paused))
+	for id := range o.running {
+		managed[id] = struct{}{}
+	}
+	for id := range o.paused {
+		managed[id] = struct{}{}
+	}
+	o.mu.Unlock()
+
+	for i, issue := range issues {
+		if issue.State != types.Claimed {
+			continue
+		}
+		if _, ok := managed[issue.ID]; ok {
+			continue
+		}
+		issues[i].State = types.Unclaimed
+		logging.LogIssueEvent(o.logger, issue.ID, "orphan_claim_recovered",
+			"identifier", issue.Identifier)
+	}
+}
+
+// releaseBlockedRunning re-evaluates BlockedBy for every currently-managed
+// issue against the latest snapshot. If a previously-absent blocker now
+// appears in the open candidate set, the running agent is gracefully stopped
+// and the issue's tracker state is reverted to Unclaimed so it re-enters the
+// dispatch queue once its blockers resolve.
+func (o *Orchestrator) releaseBlockedRunning(
+	ctx context.Context,
+	issuesByID map[string]types.Issue,
+	openIDs map[string]struct{},
+) {
+	o.mu.Lock()
+	managed := make([]string, 0, len(o.running))
+	for id := range o.running {
+		managed = append(managed, id)
+	}
+	o.mu.Unlock()
+
+	for _, id := range managed {
+		issue, ok := issuesByID[id]
+		if !ok {
+			continue
+		}
+		unresolved := unresolvedBlockers(issue.BlockedBy, openIDs)
+		if len(unresolved) == 0 {
+			continue
+		}
+
+		logging.LogIssueEvent(o.logger, id,
+			"running_released_blocked_by",
+			"blockers", strings.Join(unresolved, ","))
+
+		o.stopRun(ctx, id)
+
+		if err := o.tracker.UpdateIssueState(ctx, id, types.Unclaimed); err != nil {
+			logging.LogIssueEvent(o.logger, id,
+				"running_release_state_revert_failed",
+				"err", err)
+		}
+	}
+}
+
+// StopAgent gracefully terminates the agent run for issueID, removes the
+// entry from the running map, and releases the tracker claim so the issue
+// returns to a queued state. Returns ErrAgentNotRunning if no managed run
+// exists for the given ID.
+func (o *Orchestrator) StopAgent(ctx context.Context, issueID string) error {
+	o.mu.Lock()
+	_, ok := o.running[issueID]
+	o.mu.Unlock()
+	if !ok {
+		return ErrAgentNotRunning
+	}
+
+	logging.LogIssueEvent(o.logger, issueID, "stop_agent_requested")
+
+	o.stopRun(ctx, issueID)
+
+	if err := o.tracker.UpdateIssueState(ctx, issueID, types.Released); err != nil {
+		logging.LogIssueEvent(o.logger, issueID, "stop_agent_state_release_failed", "err", err)
+	}
+	if err := o.tracker.ReleaseIssue(ctx, issueID); err != nil {
+		logging.LogIssueEvent(o.logger, issueID, "stop_agent_release_failed", "err", err)
+	}
+
+	o.emitStatusUpdate()
+	return nil
 }
 
 // unresolvedBlockers returns the subset of blockers that still appear in the
@@ -318,8 +442,12 @@ func (o *Orchestrator) dispatchIssue(
 		return
 	}
 
+	o.recordTimelineRun(ctx, issue, attemptNumber, timeline.NodeStatusStarted, time.Now(), time.Time{})
 	if err := o.claimIssue(ctx, issue); err != nil {
 		logging.LogIssueEvent(o.logger, issue.ID, "claim_failed", "err", err)
+		o.recordTimelineNode(ctx, issue,
+			preAgentTimelineAttempt(issue, attemptNumber, types.PreparingWorkspace, err),
+			"claim-failed", timeline.NodeStatusFailed, "Issue claim failed", "Contrabass could not claim the issue before starting an agent.", err.Error(), true)
 		o.enqueueContinuation(issue.ID, attemptNumber, err.Error())
 		return
 	}
@@ -335,6 +463,8 @@ func (o *Orchestrator) dispatchIssue(
 	workspacePath, err := o.workspace.Create(ctx, issue)
 	if err != nil {
 		logging.LogIssueEvent(o.logger, issue.ID, "workspace_create_failed", "err", err)
+		o.recordTimelineNode(ctx, issue, runAttempt,
+			"workspace-failed", timeline.NodeStatusFailed, "Workspace creation failed", "Contrabass could not create the issue workspace.", err.Error(), true)
 		o.releaseClaimAndQueueContinuation(ctx, issue.ID, runAttempt.Attempt, err)
 		return
 	}
@@ -359,6 +489,8 @@ func (o *Orchestrator) dispatchIssue(
 			logging.LogIssueEvent(o.logger, issue.ID, "workspace_cleanup_failed", "stage", "prompt_render", "err", cleanupErr)
 		}
 		logging.LogIssueEvent(o.logger, issue.ID, "prompt_build_failed", "err", err)
+		o.recordTimelineNode(ctx, issue, runAttempt,
+			"prompt-failed", timeline.NodeStatusFailed, "Prompt render failed", "Contrabass could not render the prompt before agent start.", err.Error(), true)
 		o.releaseClaimAndQueueContinuation(ctx, issue.ID, runAttempt.Attempt, err)
 		return
 	}
@@ -381,6 +513,8 @@ func (o *Orchestrator) dispatchIssue(
 			logging.LogIssueEvent(o.logger, issue.ID, "workspace_cleanup_failed", "stage", "agent_start", "err", cleanupErr)
 		}
 		logging.LogAgentEvent(o.logger, issue.ID, "start_failed", "err", err)
+		o.recordTimelineNode(ctx, issue, runAttempt,
+			"agent-start-failed", timeline.NodeStatusFailed, "Agent start failed", "Contrabass could not start the agent process.", err.Error(), true)
 		o.enqueueBackoffFromRunning(ctx, issue, runAttempt, err)
 		return
 	}

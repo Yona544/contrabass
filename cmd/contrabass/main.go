@@ -24,6 +24,7 @@ import (
 	"github.com/junhoyeo/contrabass/internal/hub"
 	"github.com/junhoyeo/contrabass/internal/logging"
 	"github.com/junhoyeo/contrabass/internal/orchestrator"
+	"github.com/junhoyeo/contrabass/internal/timeline"
 	"github.com/junhoyeo/contrabass/internal/tracker"
 	"github.com/junhoyeo/contrabass/internal/tui"
 	"github.com/junhoyeo/contrabass/internal/update"
@@ -271,6 +272,32 @@ func run(cfgPath string, noTUI bool, logFile, logLevel string, dryRun bool, port
 
 	// 9. Create orchestrator
 	orch := orchestrator.NewOrchestrator(trackerClient, workspaceMgr, agentRunner, watcher, logger)
+	timelineStore := timeline.NewStore(cfg.WorkflowTimelineDir())
+	orch.SetWorkflowTimeline(timelineStore, cfg.LinearSyncCommentsEnabled())
+	var linearSyncer *timeline.LinearSyncer
+	if cfg.LinearSyncCommentsEnabled() {
+		if cfg.TrackerType() == "linear" {
+			writer, ok := trackerClient.(tracker.LinearCommentWriter)
+			if !ok {
+				return fmt.Errorf("linear comment sync enabled but tracker does not support Linear comment writer")
+			}
+			linearSyncer = timeline.NewLinearSyncer(timelineStore, writer, timeline.LinearSyncerConfig{
+				Mode:               cfg.LinearSyncCommentsMode(),
+				AllowReplyFallback: !cfg.LinearSyncCommentsModeExplicit(),
+				QueueSize:          cfg.LinearSyncCommentsQueueSize(),
+				PollInterval:       time.Duration(cfg.LinearSyncCommentsPollIntervalMs()) * time.Millisecond,
+				Logger:             logger,
+			})
+			go func() {
+				if err := linearSyncer.Run(ctx); err != nil {
+					logger.Warn("linear comment syncer stopped", "err", err)
+				}
+			}()
+		} else {
+			logger.Warn("linear comment sync enabled for non-linear tracker; legacy comments remain active",
+				"tracker_type", cfg.TrackerType())
+		}
+	}
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(signalChan)
@@ -299,6 +326,11 @@ func run(cfgPath string, noTUI bool, logFile, logLevel string, dryRun bool, port
 		}
 
 		srv := web.NewServer(fmt.Sprintf("localhost:%d", port), orch, h, dashboardFS)
+		srv.SetAgentStopper(orch)
+		if detailProvider, ok := trackerClient.(tracker.IssueDetailProvider); ok {
+			srv.SetIssueDetailProvider(detailProvider)
+		}
+		srv.SetTimelineProvider(timelineStore)
 		listener, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", port))
 		if err != nil {
 			return fmt.Errorf("listen web dashboard: %w", err)
@@ -369,6 +401,17 @@ func runHeadless(
 	}
 
 	return orch.Run(ctx)
+}
+
+type workflowTimelineProvider struct {
+	store *timeline.Store
+}
+
+func (p workflowTimelineProvider) IssueTimeline(ctx context.Context, issueID string) (interface{}, error) {
+	if p.store == nil {
+		return nil, errors.New("timeline store is nil")
+	}
+	return p.store.Snapshot(ctx, issueID)
 }
 
 func startSignalShutdownHook(

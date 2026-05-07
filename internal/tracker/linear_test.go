@@ -196,6 +196,13 @@ func TestFetchIssues_FiltersTerminalAndBacklogStates(t *testing.T) {
 	for _, iss := range issues {
 		assert.Contains(t, []string{"unstarted", "started"}, iss.TrackerMeta["linear_state_type"])
 	}
+
+	statesByID := map[string]types.IssueState{}
+	for _, iss := range issues {
+		statesByID[iss.ID] = iss.State
+	}
+	assert.Equal(t, types.Unclaimed, statesByID["open-todo"])
+	assert.Equal(t, types.Claimed, statesByID["open-in-progress"])
 }
 
 // TestFetchIssues_KeepsIssuesWithoutStateType guards backwards compatibility:
@@ -548,7 +555,13 @@ func TestPostComment(t *testing.T) {
 			statusCode: 200,
 			response: map[string]interface{}{
 				"data": map[string]interface{}{
-					"commentCreate": map[string]interface{}{"success": true},
+					"commentCreate": map[string]interface{}{
+						"success": true,
+						"comment": map[string]interface{}{
+							"id":  "comment-1",
+							"url": "https://linear.app/acme/comment/comment-1",
+						},
+					},
 				},
 			},
 			wantErr: false,
@@ -585,6 +598,95 @@ func TestPostComment(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 			}
+		})
+	}
+}
+
+func TestLinearCommentWriterMutations(t *testing.T) {
+	tests := []struct {
+		name      string
+		call      func(context.Context, *LinearClient) (CommentRef, error)
+		assertReq func(t *testing.T, req gqlRequest)
+		response  map[string]interface{}
+		wantRef   CommentRef
+	}{
+		{
+			name: "root comment returns id and url",
+			call: func(ctx context.Context, c *LinearClient) (CommentRef, error) {
+				return c.CreateRootComment(ctx, RootCommentInput{IssueID: "issue-42", Body: "root body"})
+			},
+			assertReq: func(t *testing.T, req gqlRequest) {
+				assert.Contains(t, req.Query, "commentCreate")
+				assert.Contains(t, req.Query, "comment { id url }")
+				assert.Equal(t, "issue-42", req.Variables["issueId"])
+				assert.Equal(t, "root body", req.Variables["body"])
+			},
+			response: map[string]interface{}{
+				"data": map[string]interface{}{
+					"commentCreate": map[string]interface{}{
+						"success": true,
+						"comment": map[string]interface{}{"id": "root-1", "url": "https://linear.app/root-1"},
+					},
+				},
+			},
+			wantRef: CommentRef{ID: "root-1", URL: "https://linear.app/root-1"},
+		},
+		{
+			name: "reply comment sends parent id",
+			call: func(ctx context.Context, c *LinearClient) (CommentRef, error) {
+				return c.CreateReplyComment(ctx, ReplyCommentInput{IssueID: "issue-42", ParentID: "root-1", Body: "reply body"})
+			},
+			assertReq: func(t *testing.T, req gqlRequest) {
+				assert.Contains(t, req.Query, "parentId")
+				assert.Equal(t, "issue-42", req.Variables["issueId"])
+				assert.Equal(t, "root-1", req.Variables["parentId"])
+				assert.Equal(t, "reply body", req.Variables["body"])
+			},
+			response: map[string]interface{}{
+				"data": map[string]interface{}{
+					"commentCreate": map[string]interface{}{
+						"success": true,
+						"comment": map[string]interface{}{"id": "reply-1", "url": "https://linear.app/reply-1"},
+					},
+				},
+			},
+			wantRef: CommentRef{ID: "reply-1", URL: "https://linear.app/reply-1"},
+		},
+		{
+			name: "update comment sends comment id",
+			call: func(ctx context.Context, c *LinearClient) (CommentRef, error) {
+				return c.UpdateComment(ctx, "reply-1", "updated body")
+			},
+			assertReq: func(t *testing.T, req gqlRequest) {
+				assert.Contains(t, req.Query, "commentUpdate")
+				assert.Equal(t, "reply-1", req.Variables["commentId"])
+				assert.Equal(t, "updated body", req.Variables["body"])
+			},
+			response: map[string]interface{}{
+				"data": map[string]interface{}{
+					"commentUpdate": map[string]interface{}{
+						"success": true,
+						"comment": map[string]interface{}{"id": "reply-1", "url": "https://linear.app/reply-1"},
+					},
+				},
+			},
+			wantRef: CommentRef{ID: "reply-1", URL: "https://linear.app/reply-1"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				req := parseGQLRequest(t, r)
+				tt.assertReq(t, req)
+				respondJSON(w, 200, tt.response)
+			}))
+			defer server.Close()
+
+			client := testClient(t, server.URL)
+			ref, err := tt.call(context.Background(), client)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantRef, ref)
 		})
 	}
 }

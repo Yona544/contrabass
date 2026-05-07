@@ -118,7 +118,6 @@ func (o *Orchestrator) completeRun(ctx context.Context, issueID string, doneErr 
 			ctx, finalAttempt.WorkspacePath, entry.issue.BranchName, finalAttempt.ClaimHeadSha)
 		switch {
 		case advanced && reason == "":
-			// branch HEAD advanced — happy path
 		case !advanced && reason == "branch_unchanged":
 			logging.LogIssueEvent(o.logger, issueID,
 				"success_unverified_branch_unchanged",
@@ -126,8 +125,8 @@ func (o *Orchestrator) completeRun(ctx context.Context, issueID string, doneErr 
 				"branch", entry.issue.BranchName,
 				"head", finalAttempt.ClaimHeadSha,
 			)
-			o.enqueueContinuation(issueID, finalAttempt.Attempt,
-				"success_unverified_branch_unchanged")
+			o.pauseUnverifiedSuccess(ctx, entry, finalAttempt,
+				"success_unverified_branch_unchanged", nil)
 			return
 		case advanced && reason == "git_error":
 			// Persistent git failure (e.g. workspace was never a real
@@ -144,8 +143,8 @@ func (o *Orchestrator) completeRun(ctx context.Context, issueID string, doneErr 
 				"head", finalAttempt.ClaimHeadSha,
 				"err", errText,
 			)
-			o.enqueueContinuation(issueID, finalAttempt.Attempt,
-				"success_unverified_workspace_invalid")
+			o.pauseUnverifiedSuccess(ctx, entry, finalAttempt,
+				"success_unverified_workspace_invalid", err)
 			return
 		case advanced && reason == "no_claim_head":
 			// Empty ClaimHeadSha — claim-time SHA capture failed.
@@ -164,6 +163,10 @@ func (o *Orchestrator) completeRun(ctx context.Context, issueID string, doneErr 
 		}
 	}
 
+	nodeSuffix, nodeStatus, nodeTitle := timelineStatusForPhase(finalAttempt.Phase)
+	o.recordTimelineNode(ctx, entry.issue, finalAttempt,
+		nodeSuffix, nodeStatus, nodeTitle, "Agent process reached a durable terminal state.", finalAttempt.Error, true)
+
 	if err := o.workspace.Cleanup(ctx, issueID); err != nil {
 		logging.LogIssueEvent(o.logger, issueID, "workspace_cleanup_failed", "stage", "complete_run", "err", err)
 	}
@@ -179,7 +182,9 @@ func (o *Orchestrator) completeRun(ctx context.Context, issueID string, doneErr 
 	if finalAttempt.Error != "" {
 		commentBody += fmt.Sprintf(" error=%q", finalAttempt.Error)
 	}
-	if err := o.tracker.PostComment(ctx, issueID, commentBody); err != nil {
+	if o.shouldSuppressLegacyComment() {
+		logging.LogIssueEvent(o.logger, issueID, "legacy_comment_suppressed", "reason", "linear_sync_enabled")
+	} else if err := o.tracker.PostComment(ctx, issueID, commentBody); err != nil {
 		logging.LogIssueEvent(o.logger, issueID, "post_comment_failed", "err", err)
 	}
 
@@ -316,6 +321,9 @@ func (o *Orchestrator) enqueueBackoffFromRunResult(ctx context.Context, issue ty
 		},
 	})
 
+	o.recordTimelineNode(ctx, issue, attempt,
+		"retry-queued", "retry_queued", "Retry queued", fmt.Sprintf("Contrabass scheduled retry attempt %d.", nextAttempt), attempt.Error, true)
+
 	logging.LogOrchestratorEvent(
 		o.logger,
 		"backoff_enqueued",
@@ -347,6 +355,49 @@ func (o *Orchestrator) releaseClaimAndQueueContinuation(ctx context.Context, iss
 	}
 	o.enqueueContinuation(issueID, attempt, cause.Error())
 	o.emitIssueReleased(issueID, attempt, releaseTimestamp)
+}
+
+func (o *Orchestrator) pauseUnverifiedSuccess(
+	ctx context.Context,
+	entry *runEntry,
+	attempt types.RunAttempt,
+	cause string,
+	verifyErr error,
+) {
+	issueID := entry.issue.ID
+	if err := o.workspace.Cleanup(ctx, issueID); err != nil {
+		logging.LogIssueEvent(o.logger, issueID, "workspace_cleanup_failed", "stage", "unverified_success", "err", err)
+	}
+	if err := o.tracker.UpdateIssueState(ctx, issueID, types.Running); err != nil {
+		logging.LogIssueEvent(o.logger, issueID, "update_running_failed", "stage", "unverified_success", "err", err)
+	}
+
+	commentBody := fmt.Sprintf(
+		"Agent reported success, but Contrabass could not verify branch changes (%s). Leaving the issue in progress for manual review; no retry was scheduled.",
+		cause,
+	)
+	if verifyErr != nil {
+		commentBody += fmt.Sprintf(" error=%q", verifyErr.Error())
+	}
+	o.recordTimelineNode(ctx, entry.issue, attempt,
+		"needs-review", "needs_review", "Manual review needed", commentBody, cause, true)
+	if o.shouldSuppressLegacyComment() {
+		logging.LogIssueEvent(o.logger, issueID, "legacy_comment_suppressed", "stage", "unverified_success", "reason", "linear_sync_enabled")
+	} else if err := o.tracker.PostComment(ctx, issueID, commentBody); err != nil {
+		logging.LogIssueEvent(o.logger, issueID, "post_comment_failed", "stage", "unverified_success", "err", err)
+	}
+
+	cached := entry.issue
+	cached.State = types.Running
+	o.mu.Lock()
+	o.paused[issueID] = cause
+	o.putIssueCacheLocked(issueID, cached)
+	o.mu.Unlock()
+
+	logging.LogIssueEvent(o.logger, issueID, "success_unverified_paused",
+		"attempt", attempt.Attempt, "cause", cause)
+	logging.LogAgentEvent(o.logger, issueID, "finished",
+		"status", attempt.Phase.String(), "err", cause)
 }
 
 func (o *Orchestrator) enqueueContinuation(issueID string, attempt int, message string) {
@@ -595,6 +646,9 @@ func (o *Orchestrator) isManagedIssue(issueID string) bool {
 	defer o.mu.Unlock()
 
 	if _, ok := o.running[issueID]; ok {
+		return true
+	}
+	if _, ok := o.paused[issueID]; ok {
 		return true
 	}
 	for _, backoffEntry := range o.backoff {

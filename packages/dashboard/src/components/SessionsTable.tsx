@@ -3,21 +3,8 @@ import { formatElapsedSince, formatNumber, formatPhase, formatRelativeTime } fro
 import { zhCN } from '../i18n/messages'
 import './SessionsTable.css'
 
-type LivenessEntry = RunningEntry & {
-  phase_label?: string
-  last_activity_at?: string
-  last_activity_kind?: string
-  last_heartbeat_at?: string
-  iteration?: number
-  iteration_max?: number
-  diff_added?: number
-  diff_removed?: number
-  diff_files?: number
-  diff_status?: string
-}
-
 interface SessionsTableProps {
-  entries: LivenessEntry[]
+  entries: RunningEntry[]
 }
 
 function formatAge(startedAt: string): string {
@@ -28,7 +15,7 @@ function truncateSessionID(sessionID: string): string {
   return sessionID.slice(0, 8)
 }
 
-function phaseLabel(entry: LivenessEntry): string {
+function phaseLabel(entry: RunningEntry): string {
   const serverLabel = entry.phase_label?.trim()
   if (serverLabel) {
     return serverLabel
@@ -70,7 +57,7 @@ function activityDotColor(tone: ReturnType<typeof activityTone>): string {
   }
 }
 
-function renderLastActivity(entry: LivenessEntry) {
+function renderLastActivity(entry: RunningEntry) {
   const tone = activityTone(entry.last_activity_at)
   const relative = entry.last_activity_at ? formatRelativeTime(entry.last_activity_at) : zhCN.sessions.relative.unknown
 
@@ -102,7 +89,7 @@ function renderLastActivity(entry: LivenessEntry) {
   )
 }
 
-function renderDiff(entry: LivenessEntry): string {
+function renderDiff(entry: RunningEntry): string {
   const status = entry.diff_status ?? 'ok'
   if (status !== 'ok') {
     return '?'
@@ -118,7 +105,7 @@ function renderDiff(entry: LivenessEntry): string {
   return `+${added} -${removed} (${files} files)`
 }
 
-function renderIteration(entry: LivenessEntry) {
+function renderIteration(entry: RunningEntry) {
   const max = entry.iteration_max ?? 0
   if (max <= 0) {
     return null

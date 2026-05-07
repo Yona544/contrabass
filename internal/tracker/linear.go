@@ -65,6 +65,7 @@ type LinearClient struct {
 
 // Compile-time interface satisfaction check.
 var _ Tracker = (*LinearClient)(nil)
+var _ LinearCommentWriter = (*LinearClient)(nil)
 
 // NewLinearClient creates a new LinearClient with the given configuration.
 func NewLinearClient(cfg LinearConfig) (*LinearClient, error) {
@@ -154,9 +155,28 @@ const updateIssueStateMutation = `mutation UpdateIssueState($issueId: String!, $
 	}
 }`
 
-const postCommentMutation = `mutation PostComment($issueId: String!, $body: String!) {
+// Linear's GraphQL schema exposes commentCreate for top-level comments with
+// comment { id url } return fields. Threaded replies use CommentCreateInput's
+// parentId field; commentUpdate updates an existing comment body when enabled
+// in the workspace schema.
+const createRootCommentMutation = `mutation CreateRootComment($issueId: String!, $body: String!) {
 	commentCreate(input: {issueId: $issueId, body: $body}) {
 		success
+		comment { id url }
+	}
+}`
+
+const createReplyCommentMutation = `mutation CreateReplyComment($issueId: String!, $parentId: String!, $body: String!) {
+	commentCreate(input: {issueId: $issueId, parentId: $parentId, body: $body}) {
+		success
+		comment { id url }
+	}
+}`
+
+const updateCommentMutation = `mutation UpdateComment($commentId: String!, $body: String!) {
+	commentUpdate(id: $commentId, input: {body: $body}) {
+		success
+		comment { id url }
 	}
 }`
 
@@ -275,19 +295,62 @@ func (c *LinearClient) UpdateIssueState(ctx context.Context, issueID string, sta
 	return checkMutationSuccess(data, "issueUpdate")
 }
 
-// PostComment creates a comment on the issue.
-func (c *LinearClient) PostComment(ctx context.Context, issueID string, body string) error {
+// IsLinearTracker identifies this tracker as Linear-backed.
+func (c *LinearClient) IsLinearTracker() bool { return true }
+
+// CreateRootComment creates a top-level comment on the issue and returns its
+// Linear ID/URL for idempotent follow-up sync.
+func (c *LinearClient) CreateRootComment(ctx context.Context, input RootCommentInput) (CommentRef, error) {
 	variables := map[string]interface{}{
-		"issueId": issueID,
-		"body":    body,
+		"issueId": input.IssueID,
+		"body":    input.Body,
 	}
 
-	data, err := c.doGraphQL(ctx, postCommentMutation, variables)
+	data, err := c.doGraphQL(ctx, createRootCommentMutation, variables)
 	if err != nil {
-		return err
+		return CommentRef{}, err
 	}
 
-	return checkMutationSuccess(data, "commentCreate")
+	return decodeCommentRef(data, "commentCreate")
+}
+
+// CreateReplyComment creates a threaded Linear reply when the schema supports
+// CommentCreateInput.parentId.
+func (c *LinearClient) CreateReplyComment(ctx context.Context, input ReplyCommentInput) (CommentRef, error) {
+	variables := map[string]interface{}{
+		"issueId":  input.IssueID,
+		"parentId": input.ParentID,
+		"body":     input.Body,
+	}
+
+	data, err := c.doGraphQL(ctx, createReplyCommentMutation, variables)
+	if err != nil {
+		return CommentRef{}, err
+	}
+
+	return decodeCommentRef(data, "commentCreate")
+}
+
+// UpdateComment updates an existing Linear comment body and returns the updated
+// comment reference.
+func (c *LinearClient) UpdateComment(ctx context.Context, commentID string, body string) (CommentRef, error) {
+	variables := map[string]interface{}{
+		"commentId": commentID,
+		"body":      body,
+	}
+
+	data, err := c.doGraphQL(ctx, updateCommentMutation, variables)
+	if err != nil {
+		return CommentRef{}, err
+	}
+
+	return decodeCommentRef(data, "commentUpdate")
+}
+
+// PostComment creates a legacy top-level comment on the issue.
+func (c *LinearClient) PostComment(ctx context.Context, issueID string, body string) error {
+	_, err := c.CreateRootComment(ctx, RootCommentInput{IssueID: issueID, Body: body})
+	return err
 }
 
 // FetchViewerID returns the authenticated user's Linear ID.
@@ -480,7 +543,7 @@ func normalizeIssue(node map[string]interface{}) types.Issue {
 		Identifier:    identifier,
 		Title:         getString(node, "title"),
 		Description:   description,
-		State:         types.Unclaimed, // All fetched issues start as unclaimed
+		State:         issueStateFromLinearStateType(linearStateType),
 		Priority:      priority,
 		Labels:        extractLabels(node),
 		URL:           getString(node, "url"),
@@ -514,11 +577,25 @@ var terminalLinearStateTypes = map[string]struct{}{
 // type should be returned to the orchestrator. An empty string is treated as
 // claimable so existing test fixtures (which omit the type field) keep working.
 func isClaimableLinearStateType(linearStateType string) bool {
-	if linearStateType == "" {
+	stateType := strings.ToLower(strings.TrimSpace(linearStateType))
+	if stateType == "" {
 		return true
 	}
-	_, terminal := terminalLinearStateTypes[linearStateType]
+	_, terminal := terminalLinearStateTypes[stateType]
 	return !terminal
+}
+
+// issueStateFromLinearStateType preserves Linear's active workflow state so an
+// issue already in progress does not look freshly unclaimed after a restart.
+func issueStateFromLinearStateType(linearStateType string) types.IssueState {
+	switch strings.ToLower(strings.TrimSpace(linearStateType)) {
+	case "", "unstarted":
+		return types.Unclaimed
+	case "started":
+		return types.Claimed
+	default:
+		return types.Claimed
+	}
 }
 
 // extractLabels extracts and lowercases label names from the issue node.
@@ -601,6 +678,25 @@ func checkMutationSuccess(data map[string]interface{}, mutationKey string) error
 	}
 
 	return nil
+}
+
+func decodeCommentRef(data map[string]interface{}, mutationKey string) (CommentRef, error) {
+	if err := checkMutationSuccess(data, mutationKey); err != nil {
+		return CommentRef{}, err
+	}
+
+	mutation, _ := data[mutationKey].(map[string]interface{})
+	comment, ok := mutation["comment"].(map[string]interface{})
+	if !ok {
+		return CommentRef{}, fmt.Errorf("%s response missing comment", mutationKey)
+	}
+
+	id, _ := comment["id"].(string)
+	if id == "" {
+		return CommentRef{}, fmt.Errorf("%s response missing comment id", mutationKey)
+	}
+	url, _ := comment["url"].(string)
+	return CommentRef{ID: id, URL: url}, nil
 }
 
 // getString safely extracts a string value from a map.
