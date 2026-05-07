@@ -1,5 +1,11 @@
 # Tasks: Harden verify-success-with-diff gate
 
+> Status (2026-05-07): T1 + T2 + T3 all landed on `feat/dashboard-zh-cn-pr`.
+> Commits: T1 — earlier on this branch (success_unverified_workspace_invalid arm),
+> T2 — `b4b672a fix(workspace): create per-issue git worktree on Issue.BranchName`,
+> T3 — `ce442c8 test(orchestrator,workspace): cover harden-verify-success-gate`.
+> Ready for archive into `openspec/specs/` once verified in production.
+
 ## T1 — Fail-close on `git_error` in the verify-gate switch
 
 **Files**: `internal/orchestrator/orchestrator_runtime.go`.
