@@ -11,7 +11,7 @@ tracker:
 agent:
   type: codex
 codex:
-  binary_path: codex
+  binary_path: "codex app-server"
 ---
 # Contrabass Self-Hosting — Hardening Project
 
