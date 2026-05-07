@@ -1,16 +1,7 @@
-import './App.css'
-import { useEffect, useState } from 'react'
-import { Header } from './components/Header'
-import { MetricCards } from './components/MetricCards'
-import { RateLimits } from './components/RateLimits'
-import { QueuePanel } from './components/QueuePanel'
-import { RetryQueue } from './components/RetryQueue'
-import { SessionsTable } from './components/SessionsTable'
-import { TeamTable } from './components/TeamTable'
-import { WorkerTable } from './components/WorkerTable'
-import { BoardView } from './components/BoardView'
-import { AgentLogs } from './components/AgentLogs'
+import { useEffect, useMemo, useState } from 'react'
+import { AppLayout } from './components/AppLayout'
 import { useSSE } from './hooks/useSSE'
+import { formatDuration } from './i18n/format'
 import { zhCN } from './i18n/messages'
 
 function computeRuntimeSeconds(startTime: string | undefined): number {
@@ -28,7 +19,7 @@ function computeRuntimeSeconds(startTime: string | undefined): number {
 }
 
 function App() {
-  const { state, connected, error, teamSnapshot, boardIssues, agentLogs, queueEvents } = useSSE()
+  const { state, connected, error } = useSSE()
   const [runtimeSeconds, setRuntimeSeconds] = useState(0)
   const startTime = state?.stats.StartTime
 
@@ -47,94 +38,26 @@ function App() {
     return () => window.clearInterval(timer)
   }, [startTime])
 
+  const runtimeLabel = useMemo(() => formatDuration(runtimeSeconds), [runtimeSeconds])
+
   if (!state) {
     return (
-      <div className="dashboard">
-        <Header connected={connected} runtimeSeconds={runtimeSeconds} />
-        <div className="dashboard__skeleton">
-          <div className="dashboard__skeleton-metrics">
-            <div className="skeleton-block skeleton-block--card" />
-            <div className="skeleton-block skeleton-block--card" />
-            <div className="skeleton-block skeleton-block--card" />
-          </div>
-          <div className="dashboard__skeleton-grid">
-            <div className="dashboard__skeleton-primary">
-              <div className="skeleton-block skeleton-block--table" />
-              <div className="skeleton-block skeleton-block--table" />
-            </div>
-            <div className="dashboard__skeleton-sidebar">
-              <div className="skeleton-block skeleton-block--small" />
-              <div className="skeleton-block skeleton-block--small" />
-            </div>
-          </div>
-        </div>
+      <div className="flex h-screen items-center justify-center bg-background text-muted-foreground">
+        <p className="text-sm">{zhCN.app.sections.runningSessions}…</p>
       </div>
     )
   }
 
   return (
-    <div className="dashboard">
-      <Header connected={connected} runtimeSeconds={runtimeSeconds} />
-
+    <div className="flex h-screen w-screen flex-col bg-background text-foreground">
       {error ? (
-        <div className="dashboard__notice dashboard__notice--error" role="alert">
-          <p className="dashboard__notice-title">{zhCN.app.connectionError}</p>
-          <p className="dashboard__notice-message">{error}</p>
+        <div className="border-b border-destructive/40 bg-destructive/10 px-4 py-2 text-xs text-destructive" role="alert">
+          {zhCN.app.connectionError}: {error}
         </div>
       ) : null}
-
-      <MetricCards stats={state.stats} backoffCount={(state.backoff ?? []).length} />
-
-      <div className="dashboard__grid">
-        <div className="dashboard__primary">
-          <section className="dashboard__section">
-            <h2 className="dashboard__section-label">{zhCN.app.sections.runningSessions}</h2>
-            <SessionsTable entries={state.running ?? []} />
-          </section>
-
-          <section className="dashboard__section">
-            <h2 className="dashboard__section-label">{zhCN.app.sections.board}</h2>
-            <BoardView issues={boardIssues} />
-          </section>
-        </div>
-
-        <aside className="dashboard__sidebar">
-          <section className="dashboard__section">
-            <h2 className="dashboard__section-label">Queue</h2>
-            <QueuePanel events={queueEvents} />
-          </section>
-
-          <section className="dashboard__section">
-            <h2 className="dashboard__section-label">{zhCN.app.sections.retryQueue}</h2>
-            <RetryQueue entries={state.backoff ?? []} />
-          </section>
-
-          <section className="dashboard__section">
-            <h2 className="dashboard__section-label">{zhCN.app.sections.rateLimits}</h2>
-            <RateLimits limits={[]} />
-          </section>
-
-          {teamSnapshot ? (
-            <>
-              <hr className="dashboard__separator" />
-              <section className="dashboard__section">
-                <h2 className="dashboard__section-label">{zhCN.app.sections.teamStatus}</h2>
-                <TeamTable snapshot={teamSnapshot} />
-              </section>
-
-              <section className="dashboard__section">
-                <h2 className="dashboard__section-label">{zhCN.app.sections.workers}</h2>
-                <WorkerTable workers={teamSnapshot.workers} />
-              </section>
-            </>
-          ) : null}
-        </aside>
+      <div className="flex-1 overflow-hidden">
+        <AppLayout state={state} connected={connected} runtimeLabel={runtimeLabel} />
       </div>
-
-      <section className="dashboard__logs">
-        <h2 className="dashboard__section-label">{zhCN.app.sections.agentLogs}</h2>
-        <AgentLogs logs={agentLogs} />
-      </section>
     </div>
   )
 }
