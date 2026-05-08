@@ -979,6 +979,95 @@ func TestFetchIssues_MissingDataField(t *testing.T) {
 	assert.Contains(t, err.Error(), "missing or invalid data field")
 }
 
+// --- BlockedBy from inverseRelations Tests ---
+
+func TestNormalizeIssue_BlockedByFromInverseRelations(t *testing.T) {
+	tests := []struct {
+		name            string
+		inverseRelNodes interface{}
+		wantBlockedBy   []string
+	}{
+		{
+			name: "one inverse blocks -> single-element BlockedBy",
+			inverseRelNodes: []interface{}{
+				map[string]interface{}{
+					"type":  "blocks",
+					"issue": map[string]interface{}{"identifier": "ZII-49"},
+				},
+			},
+			wantBlockedBy: []string{"ZII-49"},
+		},
+		{
+			name: "two inverse blocks plus one related -> only blocks kept in input order",
+			inverseRelNodes: []interface{}{
+				map[string]interface{}{
+					"type":  "blocks",
+					"issue": map[string]interface{}{"identifier": "ZII-49"},
+				},
+				map[string]interface{}{
+					"type":  "related",
+					"issue": map[string]interface{}{"identifier": "ZII-99"},
+				},
+				map[string]interface{}{
+					"type":  "blocks",
+					"issue": map[string]interface{}{"identifier": "ZII-50"},
+				},
+			},
+			wantBlockedBy: []string{"ZII-49", "ZII-50"},
+		},
+		{
+			name:            "empty inverseRelations.nodes -> empty slice",
+			inverseRelNodes: []interface{}{},
+			wantBlockedBy:   []string{},
+		},
+		{
+			name: "inverse blocks node missing issue.identifier -> silently skipped",
+			inverseRelNodes: []interface{}{
+				map[string]interface{}{
+					"type":  "blocks",
+					"issue": map[string]interface{}{},
+				},
+			},
+			wantBlockedBy: []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				respondJSON(w, 200, map[string]interface{}{
+					"data": map[string]interface{}{
+						"issues": map[string]interface{}{
+							"nodes": []interface{}{
+								map[string]interface{}{
+									"id":         "issue-1",
+									"identifier": "ZII-53",
+									"title":      "Dependent task",
+									"state":      map[string]interface{}{"name": "Todo"},
+									"labels":     map[string]interface{}{"nodes": []interface{}{}},
+									"inverseRelations": map[string]interface{}{
+										"nodes": tt.inverseRelNodes,
+									},
+								},
+							},
+							"pageInfo": map[string]interface{}{"hasNextPage": false},
+						},
+					},
+				})
+			}))
+			defer server.Close()
+
+			client := testClient(t, server.URL)
+			issues, err := client.FetchIssues(context.Background())
+
+			require.NoError(t, err)
+			require.Len(t, issues, 1)
+			assert.Equal(t, tt.wantBlockedBy, issues[0].BlockedBy)
+			assert.NotNil(t, issues[0].BlockedBy)
+		})
+	}
+}
+
 // --- truncateBody Tests ---
 
 func TestTruncateBody_LongBody(t *testing.T) {
@@ -1011,99 +1100,4 @@ func TestTruncateBody_LongBody(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestNormalizeIssue_BlockedByFromInverseRelations(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		respondJSON(w, 200, map[string]interface{}{
-			"data": map[string]interface{}{
-				"issues": map[string]interface{}{
-					"nodes": []interface{}{
-						// Case 1: one inverse blocks → single-element BlockedBy
-						map[string]interface{}{
-							"id":         "id-50",
-							"identifier": "ZII-50",
-							"state":      map[string]interface{}{"name": "Todo"},
-							"inverseRelations": map[string]interface{}{
-								"nodes": []interface{}{
-									map[string]interface{}{
-										"type":  "blocks",
-										"issue": map[string]interface{}{"identifier": "ZII-49"},
-									},
-								},
-							},
-						},
-						// Case 2: two blocks + one related → only blocks, in input order
-						map[string]interface{}{
-							"id":         "id-51",
-							"identifier": "ZII-51",
-							"state":      map[string]interface{}{"name": "Todo"},
-							"inverseRelations": map[string]interface{}{
-								"nodes": []interface{}{
-									map[string]interface{}{
-										"type":  "blocks",
-										"issue": map[string]interface{}{"identifier": "ZII-49"},
-									},
-									map[string]interface{}{
-										"type":  "related",
-										"issue": map[string]interface{}{"identifier": "ZII-44"},
-									},
-									map[string]interface{}{
-										"type":  "blocks",
-										"issue": map[string]interface{}{"identifier": "ZII-50"},
-									},
-								},
-							},
-						},
-						// Case 3: empty inverseRelations.nodes → []string{}
-						map[string]interface{}{
-							"id":         "id-52",
-							"identifier": "ZII-52",
-							"state":      map[string]interface{}{"name": "Todo"},
-							"inverseRelations": map[string]interface{}{
-								"nodes": []interface{}{},
-							},
-						},
-						// Case 4: blocks node missing issue.identifier → silently skipped,
-						// well-formed sibling preserved
-						map[string]interface{}{
-							"id":         "id-53",
-							"identifier": "ZII-53",
-							"state":      map[string]interface{}{"name": "Todo"},
-							"inverseRelations": map[string]interface{}{
-								"nodes": []interface{}{
-									map[string]interface{}{
-										"type":  "blocks",
-										"issue": map[string]interface{}{},
-									},
-									map[string]interface{}{
-										"type":  "blocks",
-										"issue": map[string]interface{}{"identifier": "ZII-49"},
-									},
-									map[string]interface{}{
-										"type": "blocks",
-										// issue field absent entirely
-									},
-								},
-							},
-						},
-					},
-					"pageInfo": map[string]interface{}{"hasNextPage": false},
-				},
-			},
-		})
-	}))
-	defer server.Close()
-
-	client := testClient(t, server.URL)
-	issues, err := client.FetchIssues(context.Background())
-
-	require.NoError(t, err)
-	require.Len(t, issues, 4)
-
-	assert.Equal(t, []string{"ZII-49"}, issues[0].BlockedBy, "case 1: one inverse blocks")
-	assert.Equal(t, []string{"ZII-49", "ZII-50"}, issues[1].BlockedBy, "case 2: only blocks, in input order")
-	assert.Equal(t, []string{}, issues[2].BlockedBy, "case 3: empty inverseRelations")
-	assert.NotNil(t, issues[2].BlockedBy, "case 3: must be non-nil empty slice")
-	assert.Equal(t, []string{"ZII-49"}, issues[3].BlockedBy, "case 4: malformed nodes skipped, well-formed kept")
 }
