@@ -46,6 +46,6 @@
 
 - [x] 7.1 Update README/config docs with `linear.issue_details` and opt-in `linear.sync_comments` settings, including the fact that sync is best-effort and off by default.
 - [x] 7.2 Run `go test ./internal/config ./internal/timeline ./internal/tracker ./internal/orchestrator ./internal/web`.
-- [ ] 7.3 Run `go test ./...`.
+- [x] 7.3 Run `go test ./...`.
 - [x] 7.4 Run `make test-dashboard` or `cd packages/dashboard && bun test`, then `cd packages/dashboard && bun run build`.
 - [x] 7.5 Perform a dashboard smoke test that opens a Linear issue detail sheet and verifies detail/timeline loading and non-secret payloads.
