@@ -1982,6 +1982,34 @@ func TestRecoverOrphanedClaims_UnclaimedUnchanged(t *testing.T) {
 	assert.Equal(t, types.Unclaimed, issues[0].State, "Unclaimed issue must not be modified")
 }
 
+func TestRecoverOrphanedClaims_LoggedOncePerRestart(t *testing.T) {
+	var buf bytes.Buffer
+	logger := log.NewWithOptions(&buf, log.Options{Level: log.DebugLevel})
+
+	mt := newObservingTracker(nil)
+	mw := workspace.NewMockManager(t.TempDir())
+	mr := &agent.MockRunner{}
+	orch := NewOrchestrator(mt, mw, mr, &staticConfig{cfg: testConfig()}, logger)
+
+	issues := []types.Issue{
+		{ID: "ISS-REPEAT", Identifier: "ISS-REPEAT", State: types.Claimed},
+	}
+
+	// First tick: override applied and logged once.
+	orch.recoverOrphanedClaims(issues)
+	firstCount := strings.Count(buf.String(), "orphan_claim_recovered")
+	assert.Equal(t, 1, firstCount, "first tick must log orphan_claim_recovered exactly once")
+
+	// Reset state to Claimed to simulate a second tick where dispatch is still pending.
+	issues[0].State = types.Claimed
+
+	// Second tick: override still applied but no additional log line.
+	orch.recoverOrphanedClaims(issues)
+	secondCount := strings.Count(buf.String(), "orphan_claim_recovered")
+	assert.Equal(t, 1, secondCount, "subsequent ticks must not duplicate orphan_claim_recovered log")
+	assert.Equal(t, types.Unclaimed, issues[0].State, "issue must still be overridden on second tick")
+}
+
 // --- releaseBlockedRunning unit tests ---
 
 // fakeRunEntry returns a runEntry with a closed Done channel and a no-op
