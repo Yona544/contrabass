@@ -270,3 +270,239 @@ func TestSnapshot_IsIsolatedFromState(t *testing.T) {
 	assert.Equal(t, "Original Title", snapshot.Issues["issue-1"].Title)
 	assert.Equal(t, 1, snapshot.Stats.Running)
 }
+
+func TestClassifyAgentStage_RuleTable(t *testing.T) {
+	baseTime := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name             string
+		lastActivityKind string
+		diffAdded        int
+		diffRemoved      int
+		tokensPerMin     float64
+		lastDiffChange   time.Time
+		wantStage        string
+		wantStep         int
+	}{
+		{
+			name:             "Wrapping on turn/completed",
+			lastActivityKind: "turn/completed",
+			wantStage:        "Wrapping",
+			wantStep:         5,
+		},
+		{
+			name:             "Wrapping on turn/failed",
+			lastActivityKind: "turn/failed",
+			wantStage:        "Wrapping",
+			wantStep:         5,
+		},
+		{
+			name:             "Wrapping on turn/cancelled",
+			lastActivityKind: "turn/cancelled",
+			wantStage:        "Wrapping",
+			wantStep:         5,
+		},
+		{
+			name:             "Reviewing when diff plateaued >60s and tokens slow",
+			lastActivityKind: "tool_call",
+			diffAdded:        0,
+			diffRemoved:      0,
+			tokensPerMin:     40_000,
+			lastDiffChange:   baseTime.Add(-90 * time.Second),
+			wantStage:        "Reviewing",
+			wantStep:         4,
+		},
+		{
+			name:             "Testing when diff plateaued >30s",
+			lastActivityKind: "tool_call",
+			diffAdded:        0,
+			diffRemoved:      0,
+			tokensPerMin:     60_000,
+			lastDiffChange:   baseTime.Add(-45 * time.Second),
+			wantStage:        "Testing",
+			wantStep:         3,
+		},
+		{
+			name:             "Editing when diff growing",
+			lastActivityKind: "tool_call",
+			diffAdded:        10,
+			diffRemoved:      2,
+			tokensPerMin:     80_000,
+			lastDiffChange:   baseTime.Add(-5 * time.Second),
+			wantStage:        "Editing",
+			wantStep:         2,
+		},
+		{
+			name:             "Exploration when no diff and no plateau",
+			lastActivityKind: "tool_call",
+			diffAdded:        0,
+			diffRemoved:      0,
+			tokensPerMin:     5_000,
+			lastDiffChange:   baseTime.Add(-10 * time.Second),
+			wantStage:        "Exploration",
+			wantStep:         1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			state := &agentStageState{
+				PrevStep:       0,
+				LastDiffChange: tt.lastDiffChange,
+			}
+			stage, step := classifyAgentStage(state, tt.lastActivityKind, tt.diffAdded, tt.diffRemoved, tt.tokensPerMin, baseTime)
+			assert.Equal(t, tt.wantStage, stage)
+			assert.Equal(t, tt.wantStep, step)
+		})
+	}
+}
+
+func TestClassifyAgentStage_MonotonicClamp(t *testing.T) {
+	baseTime := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+	state := &agentStageState{
+		PrevStep:       0,
+		LastDiffChange: baseTime.Add(-90 * time.Second),
+	}
+
+	// First call: diff plateaued >60s, slow tokens → Reviewing (4).
+	stage1, step1 := classifyAgentStage(state, "tool_call", 0, 0, 40_000, baseTime)
+	assert.Equal(t, "Reviewing", stage1)
+	assert.Equal(t, 4, step1)
+
+	// Second call: diff growing again would normally yield Editing (2), but clamp holds at 4.
+	stage2, step2 := classifyAgentStage(state, "tool_call", 20, 5, 80_000, baseTime.Add(time.Second))
+	assert.Equal(t, "Reviewing", stage2)
+	assert.Equal(t, 4, step2)
+}
+
+func TestEstimateCompletionAt_LowEarly(t *testing.T) {
+	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+	startedAt := now.Add(-90 * time.Second)
+
+	etaAt, conf := estimateCompletionAt(startedAt, now, 5, 1000, 2000, 2, 0)
+
+	assert.Equal(t, "", etaAt)
+	assert.Equal(t, "low", conf)
+}
+
+func TestEstimateCompletionAt_LowQuiet(t *testing.T) {
+	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+	startedAt := now.Add(-10 * time.Minute)
+
+	// tokensPerMin = (100+100)/10 = 20 — well below 1000.
+	etaAt, conf := estimateCompletionAt(startedAt, now, 1, 100, 100, 2, 0)
+
+	assert.Equal(t, "", etaAt)
+	assert.Equal(t, "low", conf)
+}
+
+func TestEstimateCompletionAt_Medium(t *testing.T) {
+	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+	startedAt := now.Add(-6 * time.Minute)
+
+	// filesPerMin = 5/6 ≈ 0.83 (>0.05), tokensPerMin = (10000+5000)/6 = 2500 (>1000).
+	// elapsed=6>5 but not >8 with stage=2 → medium.
+	etaAt, conf := estimateCompletionAt(startedAt, now, 5, 10_000, 5_000, 2, 0)
+
+	assert.Equal(t, "medium", conf)
+	require.NotEmpty(t, etaAt)
+
+	parsed, err := time.Parse(time.RFC3339, etaAt)
+	require.NoError(t, err)
+	assert.True(t, parsed.After(now), "ETA should be in the future")
+}
+
+func TestEstimateCompletionAt_High(t *testing.T) {
+	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+	startedAt := now.Add(-12 * time.Minute)
+
+	// elapsed=12>8, stageStep=4≥3 → high.
+	etaAt, conf := estimateCompletionAt(startedAt, now, 8, 50_000, 20_000, 4, 0)
+
+	assert.Equal(t, "high", conf)
+	require.NotEmpty(t, etaAt)
+
+	parsed, err := time.Parse(time.RFC3339, etaAt)
+	require.NoError(t, err)
+	assert.True(t, parsed.After(startedAt))
+}
+
+func TestSnapshot_StagePropagatesAcrossTicks(t *testing.T) {
+	now := time.Now()
+	issue := types.Issue{ID: "stage-issue"}
+	attempt := types.RunAttempt{
+		IssueID:   "stage-issue",
+		Attempt:   1,
+		StartTime: now.Add(-10 * time.Minute),
+		Phase:     types.StreamingTurn,
+		TokensIn:  20_000,
+		TokensOut: 10_000,
+	}
+	entry := &runEntry{
+		issue:     issue,
+		attempt:   attempt,
+		workspace: t.TempDir(),
+		stageState: agentStageState{
+			PrevStep:       3,
+			LastDiffChange: now.Add(-120 * time.Second),
+		},
+	}
+
+	o := &Orchestrator{
+		running:    map[string]*runEntry{"stage-issue": entry},
+		backoff:    []types.BackoffEntry{},
+		issueCache: make(map[string]types.Issue),
+		stats:      Stats{},
+	}
+
+	snap1 := o.Snapshot()
+	require.Len(t, snap1.Running, 1)
+	step1 := snap1.Running[0].AgentStageStep
+
+	snap2 := o.Snapshot()
+	require.Len(t, snap2.Running, 1)
+	step2 := snap2.Running[0].AgentStageStep
+
+	assert.GreaterOrEqual(t, step2, step1, "stage step must never decrease")
+	assert.GreaterOrEqual(t, step1, 1)
+}
+
+func TestSnapshot_ReleasesAgentStageState(t *testing.T) {
+	now := time.Now()
+	issue := types.Issue{ID: "release-issue"}
+	attempt := types.RunAttempt{
+		IssueID:   "release-issue",
+		Attempt:   1,
+		StartTime: now.Add(-5 * time.Minute),
+		Phase:     types.StreamingTurn,
+		TokensIn:  5_000,
+		TokensOut: 2_000,
+	}
+	entry := &runEntry{
+		issue:     issue,
+		attempt:   attempt,
+		workspace: t.TempDir(),
+	}
+
+	o := &Orchestrator{
+		running:    map[string]*runEntry{"release-issue": entry},
+		backoff:    []types.BackoffEntry{},
+		issueCache: make(map[string]types.Issue),
+		stats:      Stats{Running: 1},
+	}
+
+	// First tick — entry is live.
+	snap1 := o.Snapshot()
+	require.Len(t, snap1.Running, 1)
+
+	// Simulate run release.
+	o.mu.Lock()
+	delete(o.running, "release-issue")
+	o.stats.Running = 0
+	o.mu.Unlock()
+
+	// Second tick — running map should be empty.
+	snap2 := o.Snapshot()
+	assert.Len(t, snap2.Running, 0)
+	assert.Equal(t, 0, len(o.running))
+}
