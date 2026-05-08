@@ -76,6 +76,7 @@ export const zhCN = {
   sessions: {
     ariaLabel: "运行会话",
     empty: "暂无运行会话",
+    stages: ["探索", "编辑", "测试", "复核", "收尾"] as const,
     headers: {
       issueID: "议题 ID",
       phase: "阶段",
@@ -89,7 +90,9 @@ export const zhCN = {
       tokensOut: "输出 Token",
       sessionID: "会话 ID",
       lastEvent: "最后事件",
+      doneBy: "预计完成",
     },
+    elapsedNormal: (minutes: number) => `已运行 ${minutes}m，正常`,
     relative: {
       unknown: "暂无活动",
       justNow: "刚刚",

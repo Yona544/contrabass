@@ -27,6 +27,11 @@ export interface RunningEntry {
   last_heartbeat_at?: string;
   iteration?: number;
   iteration_max?: number;
+  // Task phase + ETA (surface-task-phase-and-eta)
+  agent_stage?: string;
+  agent_stage_step?: number;
+  eta_completion_at?: string;
+  eta_confidence?: string;
 }
 
 export type DetailSelectionKind =
