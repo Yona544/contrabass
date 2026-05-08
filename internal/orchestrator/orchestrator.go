@@ -81,6 +81,12 @@ type Orchestrator struct {
 	issueCache      map[string]types.Issue
 	issueCacheOrder []string
 
+	// recoveredSet tracks issue IDs for which orphan_claim_recovered has
+	// already been logged since the last process start. It is populated by
+	// recoverOrphanedClaims and is never cleared, so each issue is logged at
+	// most once per orchestrator lifetime.
+	recoveredSet map[string]struct{}
+
 	buildInfo BuildInfo
 }
 
@@ -113,16 +119,17 @@ func NewOrchestrator(
 	}
 
 	return &Orchestrator{
-		tracker:    tracker,
-		workspace:  workspace,
-		agent:      agentRunner,
-		config:     configProvider,
-		logger:     logger,
-		running:    make(map[string]*runEntry),
-		backoff:    []types.BackoffEntry{},
-		paused:     make(map[string]string),
-		events:     make(chan OrchestratorEvent, defaultEventBufferSize),
-		issueCache: make(map[string]types.Issue),
+		tracker:      tracker,
+		workspace:    workspace,
+		agent:        agentRunner,
+		config:       configProvider,
+		logger:       logger,
+		running:      make(map[string]*runEntry),
+		backoff:      []types.BackoffEntry{},
+		paused:       make(map[string]string),
+		events:       make(chan OrchestratorEvent, defaultEventBufferSize),
+		issueCache:   make(map[string]types.Issue),
+		recoveredSet: make(map[string]struct{}),
 		stats: Stats{
 			MaxAgents: cfg.MaxConcurrency(),
 			StartTime: time.Now(),
@@ -322,6 +329,10 @@ func (o *Orchestrator) dispatchUnclaimedIssues(
 // handles the restart/crash case where Linear still shows "In Progress" but
 // no agent is running: the issue is treated as Unclaimed so it re-enters the
 // dispatch queue on this tick.
+//
+// The orphan_claim_recovered log event is emitted at most once per issue per
+// orchestrator lifetime (tracked via recoveredSet) to prevent log spam when
+// dispatch is deferred across multiple ticks (e.g. max concurrency reached).
 func (o *Orchestrator) recoverOrphanedClaims(issues []types.Issue) {
 	o.mu.Lock()
 	managed := make(map[string]struct{}, len(o.running)+len(o.paused))
@@ -341,8 +352,18 @@ func (o *Orchestrator) recoverOrphanedClaims(issues []types.Issue) {
 			continue
 		}
 		issues[i].State = types.Unclaimed
-		logging.LogIssueEvent(o.logger, issue.ID, "orphan_claim_recovered",
-			"identifier", issue.Identifier)
+
+		o.mu.Lock()
+		_, alreadyLogged := o.recoveredSet[issue.ID]
+		if !alreadyLogged {
+			o.recoveredSet[issue.ID] = struct{}{}
+		}
+		o.mu.Unlock()
+
+		if !alreadyLogged {
+			logging.LogIssueEvent(o.logger, issue.ID, "orphan_claim_recovered",
+				"identifier", issue.Identifier)
+		}
 	}
 }
 
