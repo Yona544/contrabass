@@ -28,6 +28,15 @@ type StateSnapshot struct {
 	Backoff     []types.BackoffEntry   `json:"backoff"`
 	Issues      map[string]types.Issue `json:"issues"`
 	GeneratedAt time.Time              `json:"generated_at"`
+	BuildInfo   BuildInfo              `json:"build_info"`
+}
+
+// BuildInfo carries the ldflags-injected version metadata so dashboards and
+// API consumers can confirm which binary is currently serving traffic.
+type BuildInfo struct {
+	Version string `json:"version"`
+	Commit  string `json:"commit"`
+	Date    string `json:"date"`
 }
 
 // RunningEntry represents a running issue execution in the snapshot.
@@ -115,7 +124,16 @@ func (o *Orchestrator) Snapshot() StateSnapshot {
 		Backoff:     backoffCopy,
 		Issues:      issuesCopy,
 		GeneratedAt: generatedAt,
+		BuildInfo:   o.buildInfo,
 	}
+}
+
+// SetBuildInfo records the ldflags-injected build metadata so it is exposed
+// via Snapshot() and the /api/v1/state endpoint. Safe to call before Run().
+func (o *Orchestrator) SetBuildInfo(info BuildInfo) {
+	o.mu.Lock()
+	o.buildInfo = info
+	o.mu.Unlock()
 }
 
 // diffStat runs `git diff --shortstat HEAD` in the workspace and returns

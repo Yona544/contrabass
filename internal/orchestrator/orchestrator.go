@@ -80,6 +80,8 @@ type Orchestrator struct {
 
 	issueCache      map[string]types.Issue
 	issueCacheOrder []string
+
+	buildInfo BuildInfo
 }
 
 func (o *Orchestrator) SetWorkflowTimeline(store *timeline.Store, suppressLinearLegacyComments bool) {

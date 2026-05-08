@@ -182,12 +182,19 @@ export interface OrchestratorEvent {
   Data: unknown;
   Timestamp: string;
 }
+export interface BuildInfo {
+  version: string;
+  commit: string;
+  date: string;
+}
+
 export interface StateSnapshot {
   stats: Stats;
   running: RunningEntry[];
   backoff: BackoffEntry[];
   issues: Record<string, Issue>;
   generated_at: string;
+  build_info?: BuildInfo;
 }
 
 export interface TeamPhaseState {

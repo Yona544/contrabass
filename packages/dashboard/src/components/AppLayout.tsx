@@ -229,6 +229,14 @@ export function AppLayout({
           <span className="ml-auto rounded-full border border-border/70 bg-card px-3 py-1 text-xs font-medium text-muted-foreground shadow-xs">
             {currentQueue.rows.length} 项
           </span>
+          {state.build_info && state.build_info.commit ? (
+            <span
+              className="rounded-full border border-border/70 bg-card px-3 py-1 font-mono text-[10px] uppercase tracking-wide text-muted-foreground shadow-xs"
+              title={`built ${state.build_info.date}`}
+            >
+              {state.build_info.version}@{state.build_info.commit}
+            </span>
+          ) : null}
         </header>
         <div className="min-h-0 flex-1 overflow-hidden p-3 sm:p-4 lg:p-6">
           <div className="mx-auto flex h-full max-w-[1600px] min-w-0 flex-col gap-4">
