@@ -63,6 +63,18 @@ type teamCLIRunner struct {
 	procs map[int]*teamCLIProcess
 }
 
+// OmxMetrics mirrors the cumulative session token / quota counters that
+// omx writes to <workspace>/.omx/metrics.json after every codex turn.
+// Fields are intentionally lenient (omx may add or rename keys); JSON
+// tags use snake_case to match omx's notify-hook output.
+type OmxMetrics struct {
+	SessionInputTokens  int64   `json:"session_input_tokens"`
+	SessionOutputTokens int64   `json:"session_output_tokens"`
+	SessionTotalTokens  int64   `json:"session_total_tokens"`
+	FiveHourLimitPct    float64 `json:"five_hour_limit_pct"`
+	WeeklyLimitPct      float64 `json:"weekly_limit_pct"`
+}
+
 type teamCLIProcess struct {
 	pid        int
 	teamName   string
@@ -75,6 +87,13 @@ type teamCLIProcess struct {
 	missing    atomic.Bool
 	finishOnce sync.Once
 	removeOnce sync.Once
+
+	lastUsage struct {
+		input  int64
+		output int64
+		total  int64
+		seen   bool
+	}
 }
 
 type teamCLIEnvelope struct {
@@ -539,6 +558,27 @@ func (r *teamCLIRunner) monitorProcess(ctx context.Context, proc *teamCLIProcess
 			if done, err := handleSnapshot(snapshot); done {
 				finish(err)
 				return
+			}
+
+			if metrics, err := readOmxMetrics(proc.workspace); err == nil && metrics != nil {
+				changed := !proc.lastUsage.seen ||
+					metrics.SessionInputTokens > proc.lastUsage.input ||
+					metrics.SessionOutputTokens > proc.lastUsage.output ||
+					metrics.SessionTotalTokens > proc.lastUsage.total
+				if changed {
+					emit("session.usage", map[string]interface{}{
+						"team_name": proc.teamName,
+						"usage": map[string]interface{}{
+							"input_tokens":  metrics.SessionInputTokens,
+							"output_tokens": metrics.SessionOutputTokens,
+							"total_tokens":  metrics.SessionTotalTokens,
+						},
+					})
+					proc.lastUsage.input = metrics.SessionInputTokens
+					proc.lastUsage.output = metrics.SessionOutputTokens
+					proc.lastUsage.total = metrics.SessionTotalTokens
+					proc.lastUsage.seen = true
+				}
 			}
 
 			pollCount++
@@ -1166,6 +1206,26 @@ func (r *teamCLIRunner) awaitNextEvent(ctx context.Context, proc *teamCLIProcess
 		"event_type": event.Type,
 		"data":       event.Data,
 	})
+}
+
+// readOmxMetrics reads <workspace>/.omx/metrics.json and returns the
+// parsed OmxMetrics. Missing file returns (nil, nil) so callers can
+// poll without log spam; partial / unparseable JSON returns (nil, err)
+// and the caller should skip the cycle.
+func readOmxMetrics(workspace string) (*OmxMetrics, error) {
+	path := filepath.Join(workspace, ".omx", "metrics.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var m OmxMetrics
+	if err := json.Unmarshal(data, &m); err != nil {
+		return nil, err
+	}
+	return &m, nil
 }
 
 func formatCommandOutput(output []byte) string {
