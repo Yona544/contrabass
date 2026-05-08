@@ -48,6 +48,7 @@ type runEntry struct {
 	lastActivityAt   time.Time
 	lastActivityKind string
 	lastHeartbeatAt  time.Time
+	stageState       agentStageState
 }
 
 type Stats struct {

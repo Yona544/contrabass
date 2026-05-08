@@ -60,6 +60,10 @@ type RunningEntry struct {
 	DiffRemoved      int            `json:"diff_removed"`
 	DiffFiles        int            `json:"diff_files"`
 	DiffStatus       string         `json:"diff_status"`
+	AgentStage       string         `json:"agent_stage"`
+	AgentStageStep   int            `json:"agent_stage_step"`
+	ETACompletionAt  string         `json:"eta_completion_at,omitempty"`
+	ETAConfidence    string         `json:"eta_confidence,omitempty"`
 }
 
 // Snapshot returns a thread-safe point-in-time copy of orchestrator state.
@@ -105,6 +109,7 @@ func (o *Orchestrator) Snapshot() StateSnapshot {
 
 	o.mu.Unlock()
 
+	now := time.Now()
 	for i := range runningEntries {
 		added, removed, files, status := diffStat(context.Background(), runningEntries[i].Workspace)
 		runningEntries[i].DiffAdded = added
@@ -114,6 +119,33 @@ func (o *Orchestrator) Snapshot() StateSnapshot {
 		iteration, max := readIterationProgress(runningEntries[i].Workspace)
 		runningEntries[i].Iteration = iteration
 		runningEntries[i].IterationMax = max
+
+		// Compute stage + ETA, updating per-run state under the lock.
+		issueID := runningEntries[i].IssueID
+		tokensTotal := runningEntries[i].TokensIn + runningEntries[i].TokensOut
+		startedAt := runningEntries[i].StartedAt
+		lastActivityKind := runningEntries[i].LastActivityKind
+
+		var stage string
+		var step int
+		var etaAt, etaConf string
+
+		o.mu.Lock()
+		if e, ok := o.running[issueID]; ok {
+			elapsedMin := now.Sub(startedAt).Minutes()
+			var tokPerMin float64
+			if elapsedMin > 0 {
+				tokPerMin = float64(tokensTotal) / elapsedMin
+			}
+			stage, step = classifyAgentStage(&e.stageState, lastActivityKind, added, removed, tokPerMin, now)
+			etaAt, etaConf = estimateCompletionAt(startedAt, now, files, runningEntries[i].TokensIn, runningEntries[i].TokensOut, step, 0)
+		}
+		o.mu.Unlock()
+
+		runningEntries[i].AgentStage = stage
+		runningEntries[i].AgentStageStep = step
+		runningEntries[i].ETACompletionAt = etaAt
+		runningEntries[i].ETAConfidence = etaConf
 	}
 
 	generatedAt := time.Now()
@@ -208,4 +240,136 @@ func formatSnapshotTime(t time.Time) string {
 		return ""
 	}
 	return t.UTC().Format(time.RFC3339)
+}
+
+// agentStageState carries the rolling state classifyAgentStage needs
+// across snapshot ticks.
+type agentStageState struct {
+	LastDiffAdded   int
+	LastDiffRemoved int
+	LastDiffChange  time.Time
+	PrevStep        int
+}
+
+// classifyAgentStage returns (stage, step) per the rules in
+// design.md Decision 1, then applies the monotonic clamp from
+// Decision 2: step is max(state.PrevStep, computed).
+func classifyAgentStage(
+	state *agentStageState,
+	lastActivityKind string,
+	diffAdded, diffRemoved int,
+	tokensPerMin float64,
+	now time.Time,
+) (string, int) {
+	var stage string
+	var step int
+
+	switch lastActivityKind {
+	case "turn/completed", "turn/failed", "turn/cancelled":
+		stage, step = "Wrapping", 5
+	default:
+		elapsed := now.Sub(state.LastDiffChange)
+		diffChanged := diffAdded > state.LastDiffAdded || diffRemoved > state.LastDiffRemoved
+		diffPlateaued := diffAdded == 0 && diffRemoved == 0
+
+		switch {
+		case diffPlateaued && elapsed > 60*time.Second && tokensPerMin < 50_000:
+			stage, step = "Reviewing", 4
+		case diffPlateaued && elapsed > 30*time.Second:
+			stage, step = "Testing", 3
+		case diffChanged:
+			stage, step = "Editing", 2
+		default:
+			stage, step = "Exploration", 1
+		}
+	}
+
+	// Monotonic clamp: step never goes backwards.
+	if step < state.PrevStep {
+		step = state.PrevStep
+		switch step {
+		case 1:
+			stage = "Exploration"
+		case 2:
+			stage = "Editing"
+		case 3:
+			stage = "Testing"
+		case 4:
+			stage = "Reviewing"
+		case 5:
+			stage = "Wrapping"
+		}
+	}
+
+	// Update state for next tick.
+	if diffAdded > state.LastDiffAdded || diffRemoved > state.LastDiffRemoved {
+		state.LastDiffAdded = diffAdded
+		state.LastDiffRemoved = diffRemoved
+		state.LastDiffChange = now
+	}
+	state.PrevStep = step
+
+	return stage, step
+}
+
+// estimateCompletionAt returns (rfc3339, confidence) per design.md
+// Decision 3. Empty rfc3339 means "do not display a timestamp"; the
+// confidence string is still set so the dashboard can show the
+// elapsed-text fallback.
+func estimateCompletionAt(
+	startedAt time.Time,
+	now time.Time,
+	diffFiles int,
+	tokensIn, tokensOut int64,
+	stageStep int,
+	estimatedTotalFiles int,
+) (string, string) {
+	elapsedMin := now.Sub(startedAt).Minutes()
+
+	if elapsedMin < 3 {
+		return "", "low"
+	}
+
+	filesPerMin := float64(diffFiles) / elapsedMin
+	tokensPerMin := float64(tokensIn+tokensOut) / elapsedMin
+
+	if filesPerMin < 0.05 || tokensPerMin < 1000 {
+		return "", "low"
+	}
+
+	// Determine confidence band.
+	var confidence string
+	if elapsedMin > 8 && stageStep >= 3 {
+		confidence = "high"
+	} else if elapsedMin > 5 {
+		confidence = "medium"
+	} else {
+		confidence = "low"
+	}
+
+	if confidence == "low" {
+		return "", "low"
+	}
+
+	// Compute ETA.
+	currentFiles := diffFiles
+	if estimatedTotalFiles <= currentFiles {
+		estimated := float64(currentFiles) * 1.2
+		if estimated < 11 {
+			estimated = 11
+		}
+		estimatedTotalFiles = int(estimated)
+	}
+
+	var linearRemainingMin float64
+	if estimatedTotalFiles > currentFiles {
+		linearRemainingMin = float64(estimatedTotalFiles-currentFiles) / filesPerMin
+	} else {
+		linearRemainingMin = 5
+	}
+
+	totalEstimateMin := elapsedMin + linearRemainingMin*1.35
+	etaAt := startedAt.Add(time.Duration(totalEstimateMin * float64(time.Minute)))
+
+	return etaAt.UTC().Format(time.RFC3339), confidence
 }
