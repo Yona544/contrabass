@@ -2172,3 +2172,109 @@ func TestRecoverOrphanedClaims_IntegrationRestartRedispatches(t *testing.T) {
 	cancel()
 	require.NoError(t, <-done)
 }
+
+// TestSuccessGate_HollowRunReroutesToBackoff is the T5 integration test for
+// verify-success-with-diff. It drives two scenarios through the full
+// orchestrator loop:
+//
+//  1. hollow success — workspace branch HEAD does not advance; verifier must
+//     block the Released transition and record the rejection via AgentFinished.
+//
+//  2. real success — workspace receives a synthetic commit before the runner
+//     emits Succeeded; the Released transition must proceed normally.
+func TestSuccessGate_HollowRunReroutesToBackoff(t *testing.T) {
+	const rejectionCause = "success_unverified_branch_unchanged"
+
+	tests := []struct {
+		name         string
+		issueID      string
+		runner       func(t *testing.T) agent.AgentRunner
+		wantReleased bool
+		wantRejected bool
+	}{
+		{
+			name:    "hollow success rejected",
+			issueID: "ISS-T5-HOLLOW",
+			runner: func(t *testing.T) agent.AgentRunner {
+				t.Helper()
+				return &agent.MockRunner{
+					Events: []types.AgentEvent{{Type: "turn/completed"}},
+					Delay:  10 * time.Millisecond,
+				}
+			},
+			wantRejected: true,
+		},
+		{
+			name:    "real success proceeds",
+			issueID: "ISS-T5-REAL",
+			runner: func(t *testing.T) agent.AgentRunner {
+				t.Helper()
+				return &commitBeforeSuccessRunner{
+					t: t,
+					base: &agent.MockRunner{
+						Events: []types.AgentEvent{{Type: "turn/completed"}},
+						Delay:  10 * time.Millisecond,
+					},
+				}
+			},
+			wantReleased: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			issue := types.Issue{
+				ID:         tt.issueID,
+				Identifier: tt.issueID,
+				Title:      tt.name,
+				State:      types.Unclaimed,
+				BranchName: tt.issueID,
+			}
+			mt := newObservingTracker([]types.Issue{issue})
+			mw := newGitWorkspaceManager(t, t.TempDir())
+			cfg := testConfig()
+			cfg.MaxRetryBackoffMsRaw = 5_000
+			orch := NewOrchestrator(mt, mw, tt.runner(t), &staticConfig{cfg: cfg}, nil)
+			events := newEventCollector(orch.Events())
+
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			done := startOrchestrator(ctx, orch)
+
+			if tt.wantRejected {
+				// Wait for the AgentFinished event (phase=Succeeded) to arrive,
+				// confirming the run completed and the verifier ran.
+				require.Eventually(t, func() bool {
+					ev, ok := events.Event(EventAgentFinished, issue.ID)
+					if !ok {
+						return false
+					}
+					finished, ok := ev.Data.(AgentFinished)
+					return ok && finished.Phase == types.Succeeded
+				}, 2*time.Second, 10*time.Millisecond,
+					"AgentFinished(Succeeded) must arrive for hollow run")
+
+				// Released transition must never have happened.
+				assert.Zero(t, mt.UpdateIssueStateCount(issue.ID, types.Released),
+					"hollow success must not release to Done")
+				// No BackoffEnqueued either — pause path does not schedule retry.
+				assert.Zero(t, events.BackoffCauseCount(issue.ID, rejectionCause),
+					"hollow success must not enqueue backoff (it is paused instead)")
+			}
+
+			if tt.wantReleased {
+				require.Eventually(t, func() bool {
+					return mt.UpdateIssueStateCount(issue.ID, types.Released) >= 1
+				}, 2*time.Second, 10*time.Millisecond,
+					"real success must release to Done")
+
+				// No rejection backoff for a real success.
+				assert.Zero(t, events.BackoffCauseCount(issue.ID, rejectionCause),
+					"real success must not carry rejection cause")
+			}
+
+			cancel()
+			require.NoError(t, <-done)
+		})
+	}
+}
