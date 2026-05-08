@@ -125,6 +125,89 @@ function renderIteration(entry: RunningEntry) {
   )
 }
 
+// StagePill renders a 5-step pill showing the current agent stage.
+// When agent_stage is empty/step is 0, falls back to the phase_label text.
+function StagePill({ entry }: { entry: RunningEntry }) {
+  const stage = entry.agent_stage ?? ''
+  const step = entry.agent_stage_step ?? 0
+
+  if (!stage || step === 0) {
+    return <span title={phaseLabel(entry)}>{phaseLabel(entry)}</span>
+  }
+
+  const stageLabel = zhCN.sessions.stages[step - 1] ?? stage
+
+  return (
+    <span className="sessions-table__stage-pill" aria-label={stage}>
+      <span
+        className="sessions-table__stage-name"
+        style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '0.7rem', marginBottom: '0.2rem' }}
+      >
+        {stageLabel}
+      </span>
+      <span style={{ display: 'flex', gap: '0.2rem' }}>
+        {[1, 2, 3, 4, 5].map((s) => {
+          let bg: string
+          let border: string
+          if (s < step) {
+            bg = 'var(--accent-color, oklch(55% 0.18 250))'
+            border = 'var(--accent-color, oklch(55% 0.18 250))'
+          } else if (s === step) {
+            bg = 'var(--accent-active, oklch(45% 0.22 250))'
+            border = 'var(--accent-active, oklch(45% 0.22 250))'
+          } else {
+            bg = 'transparent'
+            border = 'var(--border-color, oklch(70% 0.02 250))'
+          }
+          return (
+            <span
+              key={s}
+              aria-hidden="true"
+              style={{
+                background: bg,
+                border: `1.5px solid ${border}`,
+                borderRadius: '2px',
+                display: 'inline-block',
+                height: '0.55rem',
+                width: '1rem',
+              }}
+            />
+          )
+        })}
+      </span>
+    </span>
+  )
+}
+
+// renderDoneBy renders the "Done by" cell per design.md Decision 5:
+// never shows a countdown, only a clock time (~HH:MM) or elapsed fallback.
+function renderDoneBy(entry: RunningEntry): string {
+  const etaAt = entry.eta_completion_at ?? ''
+  const conf = entry.eta_confidence ?? ''
+
+  if (etaAt && (conf === 'medium' || conf === 'high')) {
+    const date = new Date(etaAt)
+    if (!Number.isNaN(date.getTime())) {
+      const hh = date.getHours().toString().padStart(2, '0')
+      const mm = date.getMinutes().toString().padStart(2, '0')
+      return `~${hh}:${mm}`
+    }
+  }
+
+  if (conf === 'low') {
+    const startedAt = entry.started_at ? Date.parse(entry.started_at) : NaN
+    if (!Number.isNaN(startedAt)) {
+      const elapsedSeconds = Math.floor(Math.max(0, Date.now() - startedAt) / 1000)
+      if (elapsedSeconds >= 60) {
+        const minutes = Math.floor(elapsedSeconds / 60)
+        return zhCN.sessions.elapsedNormal(minutes)
+      }
+    }
+  }
+
+  return '—'
+}
+
 export function SessionsTable({ entries }: SessionsTableProps) {
   if (entries.length === 0) {
     return <div className="sessions-table__empty">{zhCN.sessions.empty}</div>
@@ -143,6 +226,7 @@ export function SessionsTable({ entries }: SessionsTableProps) {
             <th>{zhCN.sessions.headers.phase}</th>
             <th>{zhCN.sessions.headers.lastActivity}</th>
             <th>{zhCN.sessions.headers.diff}</th>
+            <th>{zhCN.sessions.headers.doneBy}</th>
             <th>{zhCN.sessions.headers.iter}</th>
             <th>{zhCN.sessions.headers.pid}</th>
             <th>{zhCN.sessions.headers.age}</th>
@@ -157,11 +241,12 @@ export function SessionsTable({ entries }: SessionsTableProps) {
           {sortedEntries.map((entry) => (
             <tr key={`${entry.issue_id}-${entry.pid}-${entry.started_at}`}>
               <td>{entry.issue_id}</td>
-              <td title={phaseLabel(entry)}>{phaseLabel(entry)}</td>
+              <td><StagePill entry={entry} /></td>
               <td>{renderLastActivity(entry)}</td>
               <td className="sessions-table__mono" title={entry.diff_status && entry.diff_status !== 'ok' ? entry.diff_status : undefined}>
                 {renderDiff(entry)}
               </td>
+              <td className="sessions-table__mono">{renderDoneBy(entry)}</td>
               <td>{renderIteration(entry)}</td>
               <td className="sessions-table__mono">{entry.pid}</td>
               <td>{formatAge(entry.started_at)}</td>
