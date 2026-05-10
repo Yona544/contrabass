@@ -39,7 +39,7 @@ export function QueuePanel({
 
   useEffect(() => {
     const pending = events.slice(processedCount.current);
-    processedCount.current = events.length;
+    processedCount.current = Math.min(processedCount.current + pending.length, events.length);
     if (pending.length === 0) {
       return;
     }

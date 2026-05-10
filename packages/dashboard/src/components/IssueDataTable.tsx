@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/table'
 import type { RunningEntry } from '../types'
 import { formatElapsedSince, formatNumber, formatRelativeTime } from '../i18n/format'
+import { zhCN } from '../i18n/messages'
 
 interface IssueDataTableProps {
   entries: RunningEntry[]
@@ -18,6 +19,77 @@ interface IssueDataTableProps {
 
 function shortId(id: string): string {
   return id.slice(0, 8)
+}
+
+// StagePill renders a 5-step pill showing the current agent stage.
+// When agent_stage is empty/step is 0, falls back to the phase_label text.
+function StagePill({ entry }: { entry: RunningEntry }) {
+  const stage = entry.agent_stage ?? ''
+  const step = entry.agent_stage_step ?? 0
+
+  if (!stage || step === 0) {
+    return <span title={entry.phase_label ?? '—'}>{entry.phase_label ?? '—'}</span>
+  }
+
+  const stageLabel = zhCN.sessions.stages[step - 1] ?? stage
+
+  return (
+    <span className="flex flex-col gap-0.5">
+      <span className="text-[0.7rem] text-muted-foreground">{stageLabel}</span>
+      <span className="flex gap-0.5">
+        {[1, 2, 3, 4, 5].map((s) => {
+          let bg: string
+          let border: string
+          if (s < step) {
+            bg = 'bg-primary'
+            border = 'border-primary'
+          } else if (s === step) {
+            bg = 'bg-primary/80'
+            border = 'border-primary/80'
+          } else {
+            bg = 'bg-transparent'
+            border = 'border-border'
+          }
+          return (
+            <span
+              key={s}
+              aria-hidden="true"
+              className={`inline-block h-[0.55rem] w-4 rounded-[2px] border-[1.5px] ${bg} ${border}`}
+            />
+          )
+        })}
+      </span>
+    </span>
+  )
+}
+
+// renderDoneBy renders the "Done by" cell per design.md Decision 5:
+// never shows a countdown, only a clock time (~HH:MM) or elapsed fallback.
+function renderDoneBy(entry: RunningEntry): string {
+  const etaAt = entry.eta_completion_at ?? ''
+  const conf = entry.eta_confidence ?? ''
+
+  if (etaAt && (conf === 'medium' || conf === 'high')) {
+    const date = new Date(etaAt)
+    if (!Number.isNaN(date.getTime())) {
+      const hh = date.getHours().toString().padStart(2, '0')
+      const mm = date.getMinutes().toString().padStart(2, '0')
+      return `~${hh}:${mm}`
+    }
+  }
+
+  if (conf === 'low') {
+    const startedAt = entry.started_at ? Date.parse(entry.started_at) : NaN
+    if (!Number.isNaN(startedAt)) {
+      const elapsedSeconds = Math.floor(Math.max(0, Date.now() - startedAt) / 1000)
+      if (elapsedSeconds >= 60) {
+        const minutes = Math.floor(elapsedSeconds / 60)
+        return zhCN.sessions.elapsedNormal(minutes)
+      }
+    }
+  }
+
+  return '—'
 }
 
 export function diffSummary(entry: RunningEntry): string {
@@ -95,6 +167,8 @@ export function IssueDataTable({ entries, emptyText, onSelect, selectedId }: Iss
               </div>
 
               <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+                <MobileFact label="阶段" value={entry.agent_stage ?? entry.phase_label ?? '—'} />
+                <MobileFact label="预计完成" value={renderDoneBy(entry)} />
                 <MobileFact label="活动" value={entry.last_activity_at ? formatRelativeTime(entry.last_activity_at) : '—'} />
                 <MobileFact label="已运行" value={formatElapsedSince(entry.started_at)} mono />
                 <MobileFact label="差异" value={diffSummary(entry)} mono />
@@ -110,12 +184,13 @@ export function IssueDataTable({ entries, emptyText, onSelect, selectedId }: Iss
       </div>
 
       <div className="hidden min-w-0 lg:block">
-        <Table className="min-w-[960px]">
+        <Table className="min-w-[1080px]">
           <TableHeader className="sticky top-0 z-10 bg-card/95 backdrop-blur">
             <TableRow className="hover:bg-transparent">
               <TableHead className="w-28 px-4 text-[0.68rem] uppercase tracking-[0.16em] text-muted-foreground">ID</TableHead>
               <TableHead className="w-44 text-[0.68rem] uppercase tracking-[0.16em] text-muted-foreground">阶段</TableHead>
-              <TableHead className="min-w-[22rem] text-[0.68rem] uppercase tracking-[0.16em] text-muted-foreground">上次活动</TableHead>
+              <TableHead className="w-28 text-[0.68rem] uppercase tracking-[0.16em] text-muted-foreground">预计完成</TableHead>
+              <TableHead className="min-w-[18rem] text-[0.68rem] uppercase tracking-[0.16em] text-muted-foreground">上次活动</TableHead>
               <TableHead className="w-36 text-[0.68rem] uppercase tracking-[0.16em] text-muted-foreground">差异</TableHead>
               <TableHead className="w-28 text-right text-[0.68rem] uppercase tracking-[0.16em] text-muted-foreground">已运行</TableHead>
               <TableHead className="w-32 text-right text-[0.68rem] uppercase tracking-[0.16em] text-muted-foreground">输入 Token</TableHead>
@@ -134,7 +209,8 @@ export function IssueDataTable({ entries, emptyText, onSelect, selectedId }: Iss
                   className="cursor-pointer"
                 >
                   <TableCell className="px-4 font-mono text-xs text-primary">{shortId(entry.issue_id)}</TableCell>
-                  <TableCell className="max-w-44 truncate text-sm font-medium">{entry.phase_label ?? '—'}</TableCell>
+                  <TableCell className="max-w-44 truncate text-sm font-medium"><StagePill entry={entry} /></TableCell>
+                  <TableCell className="font-mono text-xs">{renderDoneBy(entry)}</TableCell>
                   <TableCell className="text-sm">
                     <span className="flex min-w-0 items-center gap-2">
                       <span className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ${dotColor(tone)}`} aria-hidden />

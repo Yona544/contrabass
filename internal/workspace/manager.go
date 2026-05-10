@@ -7,12 +7,17 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
 
 	"github.com/junhoyeo/contrabass/internal/types"
 )
+
+// issueIDPattern restricts issue IDs to alphanumeric, hyphen, and underscore.
+// This prevents path-traversal via "../" or other metacharacters.
+var issueIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 type Manager struct {
 	baseDir   string
@@ -34,6 +39,9 @@ func NewManager(baseDir string) *Manager {
 func (m *Manager) Create(ctx context.Context, issue types.Issue) (string, error) {
 	if issue.ID == "" {
 		return "", errors.New("issue id is required")
+	}
+	if !issueIDPattern.MatchString(issue.ID) {
+		return "", fmt.Errorf("issue id %q contains invalid characters", issue.ID)
 	}
 
 	unlock := m.lockIssue(issue.ID)
@@ -70,6 +78,28 @@ func (m *Manager) Create(ctx context.Context, issue types.Issue) (string, error)
 
 	if err := os.MkdirAll(filepath.Dir(workspacePath), 0o755); err != nil {
 		return "", fmt.Errorf("create workspace parent directory: %w", err)
+	}
+
+	// Verify context is still valid before any I/O.
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
+	// If the base directory is not a git repo, create a plain directory
+	// instead of a git worktree. This is needed for tests and ephemeral
+	// environments that do not have a git repository.
+	gitErr := m.runGitQuick(ctx, "rev-parse", "--git-dir")
+	if gitErr != nil {
+		if errors.Is(gitErr, exec.ErrNotFound) {
+			return "", fmt.Errorf("git executable not found: %w", gitErr)
+		}
+		if err := os.MkdirAll(workspacePath, 0o755); err != nil {
+			return "", fmt.Errorf("create plain workspace dir for issue %s: %w", issue.ID, err)
+		}
+		m.mu.Lock()
+		m.active[issue.ID] = workspacePath
+		m.mu.Unlock()
+		return workspacePath, nil
 	}
 
 	// Choose the branch the agent will commit on. Issue.BranchName is the
@@ -239,6 +269,23 @@ func resolvedAbs(path string) string {
 		return resolved
 	}
 	return abs
+}
+
+// isGitRepo returns true when the base directory is inside a git repository
+// and the git binary is available.
+func (m *Manager) isGitRepo(ctx context.Context) bool {
+	_, err := m.runGit(ctx, "rev-parse", "--git-dir")
+	return err == nil
+}
+
+// runGitQuick is like runGit but returns exec.ErrNotFound directly when the
+// git binary is missing, without wrapping, so callers can distinguish
+// "binary missing" from "command failed".
+func (m *Manager) runGitQuick(ctx context.Context, args ...string) error {
+	cmd := exec.CommandContext(ctx, m.gitBinary, args...)
+	cmd.Dir = m.baseDir
+	_, err := cmd.CombinedOutput()
+	return err
 }
 
 func (m *Manager) runGit(ctx context.Context, args ...string) (string, error) {

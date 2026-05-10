@@ -67,7 +67,9 @@ func (s *LinearSyncer) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			return s.Drain(context.Background())
+			drainCtx, drainCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer drainCancel()
+			return s.Drain(drainCtx)
 		case issueID := <-s.queue:
 			if err := s.ProcessIssue(ctx, issueID); err != nil && s.cfg.Logger != nil {
 				s.cfg.Logger.Warn("linear timeline sync failed", "issue_id", issueID, "err", err)

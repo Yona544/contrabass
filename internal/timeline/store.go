@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -19,11 +20,16 @@ import (
 type Store struct {
 	baseDir string
 	mu      sync.Mutex
+
+	// nodeIndex caches the latest content hash per node key to avoid
+	// reloading the full snapshot on every node upsert. The key format
+	// matches nodeKey().
+	nodeIndex map[string]string
 }
 
 // NewStore creates a timeline store rooted at baseDir.
 func NewStore(baseDir string) *Store {
-	return &Store{baseDir: baseDir}
+	return &Store{baseDir: baseDir, nodeIndex: make(map[string]string)}
 }
 
 func (s *Store) path(issueID string) string {
@@ -116,11 +122,8 @@ func (s *Store) append(issueID string, record timelineRecord) error {
 	defer lock.unlock()
 
 	if record.Type == recordNodeUpsert && record.NodeSummary != nil {
-		snapshot, err := s.loadSnapshotNoLock(issueID, path)
-		if err != nil {
-			return err
-		}
-		if existing, ok := snapshot.NodesByKey[nodeKey(*record.NodeSummary)]; ok && existing.ContentHash == record.NodeSummary.ContentHash {
+		key := nodeKey(*record.NodeSummary)
+		if hash, ok := s.nodeIndex[key]; ok && hash == record.NodeSummary.ContentHash {
 			return nil
 		}
 	}
@@ -138,6 +141,11 @@ func (s *Store) append(issueID string, record timelineRecord) error {
 
 	if _, err := f.Write(append(data, '\n')); err != nil {
 		return fmt.Errorf("append timeline record: %w", err)
+	}
+
+	// Update in-memory index after successful append.
+	if record.Type == recordNodeUpsert && record.NodeSummary != nil {
+		s.nodeIndex[nodeKey(*record.NodeSummary)] = record.NodeSummary.ContentHash
 	}
 	return nil
 }
@@ -209,16 +217,23 @@ func (s *Store) loadSnapshotNoLock(issueID, path string) (*WorkflowTimelineSnaps
 
 	snapshot := newSnapshot(issueID)
 
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		var rec timelineRecord
-		if err := json.Unmarshal(scanner.Bytes(), &rec); err != nil {
-			continue
+	// Use bufio.Reader instead of bufio.Scanner to avoid the default 64KB
+	// token limit on very long JSON lines.
+	reader := bufio.NewReaderSize(f, 64*1024)
+	for {
+		line, err := reader.ReadBytes('\n')
+		if len(line) > 0 {
+			var rec timelineRecord
+			if unmarshalErr := json.Unmarshal(line, &rec); unmarshalErr == nil {
+				snapshot.apply(rec)
+			}
 		}
-		snapshot.apply(rec)
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("scan timeline file %s: %w", path, err)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return nil, fmt.Errorf("read timeline file %s: %w", path, err)
+		}
 	}
 
 	snapshot.finalize()
