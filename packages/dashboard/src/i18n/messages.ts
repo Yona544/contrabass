@@ -72,6 +72,12 @@ export const zhCN = {
       remaining: "剩余",
       reset: "重置时间",
     },
+    headers: {
+      provider: "提供商",
+      limit: "限制",
+      remaining: "剩余",
+      reset: "重置时间",
+    },
   },
   sessions: {
     ariaLabel: "运行会话",
@@ -100,6 +106,12 @@ export const zhCN = {
       minutesAgo: (minutes: number) => `${minutes}分钟前`,
       hoursAgo: (hours: number) => `${hours}小时前`,
       daysAgo: (days: number) => `${days}天前`,
+    },
+    status: {
+      active: "活跃",
+      idle: "空闲",
+      error: "错误",
+      stopped: "已停止",
     },
   },
   team: {
@@ -169,5 +181,11 @@ export const zhCN = {
     stopAgent: "停止代理",
     stopping: "停止中…",
     stopFailed: (error: string) => `停止失败：${error}`,
+    stageLabel: "当前阶段",
+    etaLabel: "预计完成",
+    etaHighConfidence: (time: string) => `预计 ${time} 完成`,
+    etaMediumConfidence: (time: string) => `预计 ${time} 完成`,
+    etaLowConfidence: (minutes: number) => `已运行 ${minutes} 分钟，正常`,
+    etaUnknown: "预计完成时间未知",
   },
 } as const;

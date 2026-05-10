@@ -321,9 +321,12 @@ func run(cfgPath string, noTUI bool, logFile, logLevel string, dryRun bool, port
 			close(webEvents)
 		}()
 
-		dashboardFS, err := fs.Sub(contrabass.DashboardDistFS, "packages/dashboard/dist")
-		if err != nil {
-			return fmt.Errorf("sub dashboard dist fs: %w", err)
+		var dashboardFS fs.FS
+		if _, statErr := fs.Stat(contrabass.DashboardDistFS, "packages/dashboard/dist"); statErr == nil {
+			dashboardFS, err = fs.Sub(contrabass.DashboardDistFS, "packages/dashboard/dist")
+			if err != nil {
+				return fmt.Errorf("sub dashboard dist fs: %w", err)
+			}
 		}
 
 		srv := web.NewServer(fmt.Sprintf("localhost:%d", port), orch, h, dashboardFS)

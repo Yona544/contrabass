@@ -406,6 +406,11 @@ func (o *Orchestrator) releaseBlockedRunning(
 				"running_release_state_revert_failed",
 				"err", err)
 		}
+		if err := o.tracker.ReleaseIssue(ctx, id); err != nil {
+			logging.LogIssueEvent(o.logger, id,
+				"running_release_claim_release_failed",
+				"err", err)
+		}
 	}
 }
 
