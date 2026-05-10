@@ -21,11 +21,11 @@ Today Contrabass ships with:
 - A `WORKFLOW.md` parser with YAML front matter, Liquid prompt rendering, and `$ENV_VAR` interpolation
 - Issue tracker adapters for **Linear**, **GitHub Issues**, and a built-in **Internal Board** (local filesystem, no external service required)
 - Agent runners for **Codex app-server**, **OpenCode**, **oh-my-opencode**, **OMX (oh-my-codex)**, and **OMC (oh-my-claudecode)**
-- Git-worktree-based workspace provisioning under `workspaces/<issue-id>`
+- Git-worktree-based workspace provisioning under `workspaces/<issue-id>` with non-git fallback for repositories without git
 - Teams: multi-agent coordination with a local task board, phased pipeline (plan → exec → verify), live TUI team table, and dual worker modes (tmux-based multi-process or goroutine-based in-process)
-- An orchestrator with claim/release, timeout detection, stall detection, deterministic retry backoff, and state snapshots
+- An orchestrator with claim/release, BlockedBy gating, orphan claim recovery, branch advance verification, stall detection, deterministic retry backoff, liveness snapshots with agent stage classification and ETA estimation
 - A Charm v2 terminal UI built with Bubble Tea, Bubbles, and Lip Gloss
-- A React dashboard served from the Go binary, with state snapshots and live SSE updates
+- **Ziikoo** — a React dashboard (neo-brutalism theme, shadcn + Tailwind v4) with a three-pane IDE-style layout, live SSE streaming, queue navigation, stage progression pills, completion ETAs, issue detail sheets with Linear metadata and workflow timelines, team/worker tables, agent logs, and zh-CN localization
 - Go unit/integration tests, TUI snapshot tests, and dashboard component/hook tests
 - A tmux-based multi-process worker mode (default) alongside the in-process goroutine mode, with JSONL event logging, file-based heartbeats, dispatch queue, governance policies, and crash recovery
 
@@ -122,19 +122,36 @@ contrabass team run --config workflow.md [flags]
 ## How Contrabass works
 
 1. Poll the configured tracker for candidate issues.
-2. Claim an eligible issue.
-3. Create or reuse a git worktree in `workspaces/<issue-id>`.
-4. Render the prompt body from `WORKFLOW.md` using issue data.
-5. Launch the configured agent runner.
-6. Stream agent events, track tokens/phases, and publish orchestrator events.
-7. Retry failed runs with exponential backoff + deterministic jitter.
-8. Mirror state into the TUI and, when enabled, the embedded web dashboard.
+2. Skip issues with unresolved `BlockedBy` dependencies (BlockedBy gating).
+3. Claim an eligible issue, recording the workspace HEAD SHA at claim time.
+4. Create or reuse a git worktree in `workspaces/<issue-id>` (falls back to plain directory when git is unavailable).
+5. Render the prompt body from `WORKFLOW.md` using issue data.
+6. Launch the configured agent runner.
+7. Stream agent events, classify agent stage (Exploration → Editing → Testing → Reviewing → Wrapping), track token consumption, and estimate completion ETAs.
+8. On completion, verify the workspace branch advanced beyond the claim HEAD before marking success.
+9. On failure, retry with deterministic exponential backoff + FNV-hash jitter.
+10. Recover orphaned claims on restart — issues marked Claimed but not actively running are reset to Unclaimed.
+11. Mirror state into the TUI, the Ziikoo dashboard (via SSE), and the JSON snapshot API.
+
+### Orchestrator features
+
+| Feature | Description |
+|---------|-------------|
+| **BlockedBy gating** | Issues with unresolved blockers are deferred from dispatch |
+| **Orphan claim recovery** | Claimed-but-not-running issues are reclaimed on restart |
+| **Branch advance verification** | Verifies agents made commits before marking success |
+| **Agent stage classification** | Monotonic 5-stage progression based on diff velocity and token patterns |
+| **Completion ETA** | Confidence-banded estimates (requires 3+ min elapsed, stage ≥ 3 for high confidence) |
+| **Liveness snapshots** | Per-agent heartbeat age, activity timestamps, diff stats, iteration progress |
+| **Stall detection** | Flags runs lacking recent events beyond `stall_timeout_ms` |
+| **Deterministic backoff** | Exponential growth with FNV-hash jitter (reproducible across restarts) |
+| **Graceful shutdown** | Drains running agents before process exit |
 
 ### Runtime notes
 
 - `WORKFLOW.md` is watched with `fsnotify`; on parse errors, Contrabass keeps the last known good config.
 - The Codex runner speaks newline-delimited JSON (`JSONL`) to `codex app-server` rather than `Content-Length` framed messages. See [`docs/codex-protocol.md`](docs/codex-protocol.md).
-- The web dashboard currently has live metrics, running sessions, and retry queue data. The rate-limit panel exists, but there is not yet a live rate-limit feed behind it.
+- The Codex runner handles `-32001` server overload errors with exponential backoff retry (up to 5 attempts) and detects stalled streams via configurable read timeouts.
 - The workflow parser already accepts more Symphony-shaped fields than the runtime fully consumes today. For example, `workspace`, `hooks`, and some `codex` settings are parsed, but the current runtime mainly uses tracker selection, timeouts, retry settings, binary paths, and prompt/template fields.
 
 ### Team worker modes
@@ -323,9 +340,9 @@ team:
 |---|---|
 | Trackers | Linear, GitHub Issues, Internal Board |
 | Agent runners | Codex app-server, OpenCode, oh-my-opencode, OMX, OMC |
-| Operator surfaces | Charm TUI, embedded web dashboard, headless mode |
+| Operator surfaces | Charm TUI, Ziikoo web dashboard, headless mode |
 | Live config reload | Yes (`WORKFLOW.md` via `fsnotify`) |
-| State streaming | JSON snapshot API + SSE |
+| State streaming | JSON snapshot API + SSE (orchestrator, team, board, agent log events) |
 
 ### Trackers
 
@@ -343,9 +360,14 @@ team:
 ### Agent runners
 
 - **Codex**
-  - Launches `codex app-server`
+  - Launches `codex app-server` with JSONL protocol (newline-delimited JSON, not Content-Length framed)
   - Performs `initialize` → `initialized` → `thread/start` → `turn/start`
-  - Streams newline-delimited JSON notifications and usage updates
+  - Streams notifications and token usage updates in real time
+  - Handles `-32001` server overload with exponential backoff retry (up to 5 attempts)
+  - Detects stalled streams via configurable read timeout (`WithStreamReadTimeout`)
+  - Closes stdin on terminal events (`turn/completed`, `turn/failed`, `turn/cancelled`) for clean exit
+  - Supports Codex 0.128+ `thread/tokenUsage` shape
+  - Forwards workflow-level `codex` config as `-c key=value` overrides (model, approval policy, sandbox)
 - **OpenCode**
   - Starts or reuses an `opencode serve` process
   - Creates sessions over HTTP and streams events over SSE
@@ -355,32 +377,73 @@ team:
 - **OMX (oh-my-codex)**
   - Launches `omx team ...` with a workspace-scoped task file
   - Polls `omx team api get-summary` and `omx team api list-tasks` for status and results
+  - Tracks per-session token usage (input/output/total) and rate limit proximity (5-hour, weekly)
+  - Monitors worker liveness via file-based heartbeats with stale detection
   - Shuts down the team with `omx team shutdown ... --force` (and `--ralph` when configured)
+  - Supports OMX v0.16+ native worker supervisor protocol
 - **OMC (oh-my-claudecode)**
   - Launches `omc team ...` with a workspace-scoped task file
   - Polls `omc team api get-summary` and `omc team api list-tasks` for status and results
+  - Same token/heartbeat monitoring as OMX
   - Shuts down the team with `omc team shutdown ... --force`
 
-## Web dashboard and HTTP API (WIP)
+## Web dashboard (Ziikoo) and HTTP API
 
-When `--port` is set, Contrabass serves the embedded dashboard and a small JSON/SSE API.
+When `--port` is set, Contrabass serves **Ziikoo** — a React dashboard embedded in the Go binary — alongside a JSON/SSE API for programmatic access.
 
-### Current endpoints
+### Dashboard features
 
-- `GET /api/v1/state` — full orchestrator snapshot
-- `GET /api/v1/issues/{issue_id}/details` — cached issue plus backend-only Linear detail data when available
-- `GET /api/v1/issues/{issue_id}/timeline` — local workflow timeline snapshot for the issue
-- `GET /api/v1/{identifier}` — cached issue lookup from the latest snapshot
-- `GET /api/v1/events` — SSE stream (initial snapshot + live orchestrator events)
-- `POST /api/v1/refresh` — currently returns `202 Accepted` as a placeholder hook
+Ziikoo uses a three-pane IDE-style layout:
 
-The dashboard currently renders:
+1. **Left sidebar** — queue navigation (running, backoff, todo, backlog, recently done, canceled) with live counts
+2. **Main content** — responsive data tables with aggregate metric cards
+3. **Right detail sheet** — slide-out panel with issue metadata, workflow timeline, and agent controls
 
-- connection status
-- aggregate runtime/token metrics
-- running session table
-- retry queue
-- issue detail sheets with Linear metadata and workflow timeline rows when those APIs are available
+Key capabilities:
+
+- **5-step agent stage pill** showing progression: Exploration → Editing → Testing → Reviewing → Wrapping
+- **Completion ETA** with confidence bands (low/medium/high)
+- **Activity indicators** with freshness coloring (fresh/warm/stale based on heartbeat age)
+- **Live metrics** — running load, queued count, archived count, token consumption (in/out)
+- **Issue detail sheets** — Linear metadata (assignee, creator, team, project, cycle, estimate, due date, relations), workflow timeline with sync status badges, debug info (PID, session ID, workspace path)
+- **Blocked queue panel** — issues deferred by BlockedBy with blocker identifiers
+- **Retry queue** — backoff entries with live countdown timers
+- **Team table** — team phase, worker counts, task counts, fix loop progress
+- **Worker table** — per-worker status (busy/idle/stopped), current task, PID
+- **Agent logs** — streaming stdout/stderr with worker filter dropdown
+- **Board view** — CRUD interface for the internal board tracker (create/edit issues, change state)
+- **Stop agent button** — terminate running agents directly from the detail sheet
+- **zh-CN localization** — full Simplified Chinese interface
+
+### HTTP API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/state` | Full orchestrator snapshot (stats, running entries, backoff queue, issues, build info) |
+| `GET` | `/api/v1/issues/{issue_id}/details` | Issue with Linear metadata when available |
+| `GET` | `/api/v1/issues/{issue_id}/timeline` | Workflow timeline snapshot |
+| `GET` | `/api/v1/{identifier}` | Single issue lookup from snapshot |
+| `GET` | `/api/v1/board/issues` | List all internal board issues |
+| `GET` | `/api/v1/board/issues/{identifier}` | Get single board issue |
+| `POST` | `/api/v1/board/issues` | Create board issue |
+| `PATCH` | `/api/v1/board/issues/{identifier}` | Update board issue (title, description, state, assignee) |
+| `POST` | `/api/v1/running/{issue_id}/stop` | Terminate running agent and release issue |
+| `POST` | `/api/v1/refresh` | Trigger refresh (202 Accepted) |
+| `GET` | `/api/v1/events` | SSE event stream |
+
+### SSE event stream
+
+Connect to `/api/v1/events` for real-time updates. The initial event is a full `snapshot`, followed by incremental events:
+
+| Kind | Events |
+|------|--------|
+| `orchestrator` | `StatusUpdate`, `AgentStarted`, `AgentFinished`, `BackoffEnqueued`, `IssueReleased` |
+| `team` | `tool_call`, `team/stalled`, `team/all_idle`, `team/missing`, `team/event` |
+| `board` | `board_issue_created`, `board_issue_updated`, `board_issue_moved` |
+| `agent_log` | Streaming worker stdout/stderr |
+| `queue` | Dispatch blocked by unresolved dependencies |
+
+Heartbeat events are filtered server-side and never reach clients. Keep-alive comments are sent every 15 seconds.
 
 ## Development
 
@@ -456,8 +519,8 @@ CI and release workflows run automatically via GitHub Actions:
 To ship a new release:
 
 ```bash
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.4.1
+git push origin v0.4.1
 ```
 
 This builds cross-platform binaries (macOS/Linux, amd64/arm64) via [GoReleaser](https://goreleaser.com),
