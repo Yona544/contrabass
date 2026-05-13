@@ -30,7 +30,9 @@ func expectedConfigWorkerModeDefault() string {
 }
 
 type mockAgentRunner struct {
-	delay time.Duration
+	delay                  time.Duration
+	minConcurrentExecTasks int32
+	concurrencyWait        time.Duration
 
 	mu         sync.Mutex
 	startCalls []mockStartCall
@@ -76,6 +78,11 @@ func (m *mockAgentRunner) Start(ctx context.Context, issue types.Issue, workDir,
 		defer atomic.AddInt32(&m.active, -1)
 		defer close(events)
 
+		if err := m.waitForConcurrentExec(ctx, issue); err != nil {
+			done <- err
+			return
+		}
+
 		if m.delay > 0 {
 			select {
 			case <-ctx.Done():
@@ -93,6 +100,33 @@ func (m *mockAgentRunner) Start(ctx context.Context, issue types.Issue, workDir,
 		Events: events,
 		Done:   done,
 	}, nil
+}
+
+func (m *mockAgentRunner) waitForConcurrentExec(ctx context.Context, issue types.Issue) error {
+	if m.minConcurrentExecTasks <= 1 || !strings.HasPrefix(issue.Identifier, "03-") {
+		return nil
+	}
+
+	wait := m.concurrencyWait
+	if wait <= 0 {
+		wait = time.Second
+	}
+
+	deadline := time.NewTimer(wait)
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer deadline.Stop()
+	defer ticker.Stop()
+
+	for atomic.LoadInt32(&m.active) < m.minConcurrentExecTasks {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline.C:
+			return nil
+		case <-ticker.C:
+		}
+	}
+	return nil
 }
 
 func (m *mockAgentRunner) Stop(*agent.AgentProcess) error {
@@ -142,7 +176,11 @@ func TestCoordinatorGoroutineModeRegression_RunPipeline(t *testing.T) {
 			stateDir := filepath.Join(baseDir, "state")
 			teamName := "goroutine-regression"
 
-			runner := &mockAgentRunner{delay: 40 * time.Millisecond}
+			runner := &mockAgentRunner{
+				delay:                  40 * time.Millisecond,
+				minConcurrentExecTasks: 2,
+				concurrencyWait:        time.Second,
+			}
 			cfg := &config.WorkflowConfig{
 				Agent: config.AgentConfig{Type: "codex"},
 				Team: config.TeamSectionConfig{
