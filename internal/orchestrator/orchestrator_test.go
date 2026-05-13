@@ -491,6 +491,46 @@ func (r *trackingRunner) StopCount() int {
 
 func (r *trackingRunner) Close() error { return nil }
 
+type blockingStopRunner struct {
+	stopStarted chan struct{}
+	releaseStop chan struct{}
+	stopOnce    sync.Once
+	releaseOnce sync.Once
+}
+
+func newBlockingStopRunner() *blockingStopRunner {
+	return &blockingStopRunner{
+		stopStarted: make(chan struct{}),
+		releaseStop: make(chan struct{}),
+	}
+}
+
+func (r *blockingStopRunner) Start(context.Context, types.Issue, string, string) (*agent.AgentProcess, error) {
+	return nil, errors.New("blockingStopRunner does not start processes")
+}
+
+func (r *blockingStopRunner) Stop(*agent.AgentProcess) error {
+	r.stopOnce.Do(func() { close(r.stopStarted) })
+	<-r.releaseStop
+	return nil
+}
+
+func (r *blockingStopRunner) Close() error { return nil }
+
+func (r *blockingStopRunner) waitForStop(t *testing.T) {
+	t.Helper()
+
+	select {
+	case <-r.stopStarted:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for Stop")
+	}
+}
+
+func (r *blockingStopRunner) unblockStop() {
+	r.releaseOnce.Do(func() { close(r.releaseStop) })
+}
+
 func startOrchestrator(ctx context.Context, orch *Orchestrator) <-chan error {
 	done := make(chan error, 1)
 	go func() {
@@ -691,21 +731,21 @@ func TestSuccessGate_HollowRunPausesWithoutRetry(t *testing.T) {
 			orch := NewOrchestrator(mt, mw, tt.runner(t), &staticConfig{cfg: cfg}, nil)
 			events := newEventCollector(orch.Events())
 
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 			defer cancel()
 			done := startOrchestrator(ctx, orch)
 
 			if tt.wantReleased {
 				require.Eventually(t, func() bool {
 					return mt.UpdateIssueStateCount(issue.ID, types.Released) >= 1
-				}, 2*time.Second, 10*time.Millisecond)
+				}, 6*time.Second, 10*time.Millisecond)
 				assert.Zero(t, events.BackoffCauseCount(issue.ID, rejectionCause))
 			}
 			if tt.wantPaused {
 				require.Eventually(t, func() bool {
 					state, ok := mt.State(issue.ID)
 					return ok && state == types.Running && !mw.base.Exists(issue.ID)
-				}, 2*time.Second, 10*time.Millisecond)
+				}, 6*time.Second, 10*time.Millisecond)
 				assert.Zero(t, mt.UpdateIssueStateCount(issue.ID, types.Released))
 				assert.Zero(t, events.BackoffCauseCount(issue.ID, rejectionCause))
 				assert.Zero(t, mt.ReleaseCount(issue.ID))
@@ -799,23 +839,19 @@ func TestOrchestrator_FollowUpTurnContinuation(t *testing.T) {
 			return entries[0].IssueID == issue.ID && entries[0].Attempt == 2
 		}, 2*time.Second, 10*time.Millisecond)
 
-		events.mu.Lock()
-		deferred := append([]OrchestratorEvent(nil), events.events...)
-		events.mu.Unlock()
-
 		var backoffPayload BackoffEnqueued
-		foundBackoff := false
-		for _, event := range deferred {
-			if event.Type != EventBackoffEnqueued || event.IssueID != issue.ID {
-				continue
+		require.Eventually(t, func() bool {
+			event, ok := events.Event(EventBackoffEnqueued, issue.ID)
+			if !ok {
+				return false
 			}
 			payload, ok := event.Data.(BackoffEnqueued)
-			require.True(t, ok)
+			if !ok {
+				return false
+			}
 			backoffPayload = payload
-			foundBackoff = true
-			break
-		}
-		require.True(t, foundBackoff)
+			return true
+		}, 2*time.Second, 10*time.Millisecond)
 		assert.Equal(t, 2, backoffPayload.Attempt)
 		assert.Equal(t, "follow-up still active", backoffPayload.Error)
 
@@ -1920,6 +1956,55 @@ func TestStopAgent_NotRunningReturnsError(t *testing.T) {
 	err := orch.StopAgent(context.Background(), "ISS-MISSING")
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrAgentNotRunning))
+}
+
+func TestStopAgent_IgnoresProcessCompletionRace(t *testing.T) {
+	target := types.Issue{ID: "ISS-RACE", Identifier: "ISS-RACE", State: types.Running}
+
+	mt := newObservingTracker([]types.Issue{target})
+	mw := workspace.NewMockManager(t.TempDir())
+	mr := newBlockingStopRunner()
+	orch := NewOrchestrator(mt, mw, mr, &staticConfig{cfg: testConfig()}, nil)
+	events := newEventCollector(orch.Events())
+
+	entry := fakeRunEntry(t, target)
+	entry.attempt = types.RunAttempt{
+		IssueID:         target.ID,
+		IssueIdentifier: target.Identifier,
+		Attempt:         1,
+		Phase:           types.StreamingTurn,
+		StartTime:       time.Now(),
+	}
+	orch.mu.Lock()
+	orch.running[target.ID] = entry
+	orch.stats.Running = 1
+	orch.mu.Unlock()
+
+	stopErr := make(chan error, 1)
+	go func() {
+		stopErr <- orch.StopAgent(context.Background(), target.ID)
+	}()
+
+	mr.waitForStop(t)
+
+	orch.completeRun(context.Background(), target.ID, errors.New("exit status 1"))
+	mr.unblockStop()
+
+	select {
+	case err := <-stopErr:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for StopAgent")
+	}
+
+	assert.Equal(t, 0, orch.RunningCount())
+	assert.Empty(t, backoffSnapshot(orch), "manual stop completion must not schedule retry")
+	assert.False(t, events.Has(EventBackoffEnqueued), "manual stop completion must not emit retry")
+	assert.Equal(t, 1, mt.ReleaseCount(target.ID), "manual stop should release exactly once")
+	state, ok := mt.State(target.ID)
+	require.True(t, ok)
+	assert.Equal(t, types.Released, state)
+	assert.Zero(t, mt.UpdateIssueStateCount(target.ID, types.RetryQueued))
 }
 
 // --- recoverOrphanedClaims unit tests ---

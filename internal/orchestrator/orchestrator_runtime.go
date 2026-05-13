@@ -82,6 +82,13 @@ func (o *Orchestrator) completeRun(ctx context.Context, issueID string, doneErr 
 		o.mu.Unlock()
 		return
 	}
+	if entry.stopRequested {
+		delete(o.running, issueID)
+		o.stats.Running = len(o.running)
+		o.mu.Unlock()
+		o.emitStatusUpdate()
+		return
+	}
 	delete(o.running, issueID)
 	o.stats.Running = len(o.running)
 	eventTimestamp := time.Now()

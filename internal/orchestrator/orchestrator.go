@@ -49,6 +49,7 @@ type runEntry struct {
 	lastActivityKind string
 	lastHeartbeatAt  time.Time
 	stageState       agentStageState
+	stopRequested    bool
 }
 
 type Stats struct {
@@ -415,12 +416,14 @@ func (o *Orchestrator) releaseBlockedRunning(
 }
 
 // StopAgent gracefully terminates the agent run for issueID, removes the
-// entry from the running map, and releases the tracker claim so the issue
-// returns to a queued state. Returns ErrAgentNotRunning if no managed run
-// exists for the given ID.
+// entry from the running map, and releases the tracker claim. Returns
+// ErrAgentNotRunning if no managed run exists for the given ID.
 func (o *Orchestrator) StopAgent(ctx context.Context, issueID string) error {
 	o.mu.Lock()
-	_, ok := o.running[issueID]
+	entry, ok := o.running[issueID]
+	if ok && entry != nil {
+		entry.stopRequested = true
+	}
 	o.mu.Unlock()
 	if !ok {
 		return ErrAgentNotRunning
