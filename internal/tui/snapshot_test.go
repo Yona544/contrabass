@@ -42,7 +42,11 @@ func assertGolden(t *testing.T, name, got string) {
 	}
 	expected, err := os.ReadFile(path)
 	require.NoError(t, err, "golden file %s not found — run with -update", path)
-	assert.Equal(t, string(expected), got)
+	assert.Equal(t, normalizeLineEndings(string(expected)), normalizeLineEndings(got))
+}
+
+func normalizeLineEndings(s string) string {
+	return strings.ReplaceAll(s, "\r\n", "\n")
 }
 
 func newSnapshotModel() Model {

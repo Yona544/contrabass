@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -349,8 +350,14 @@ func (r *CodexRunner) Stop(proc *AgentProcess) error {
 		return fmt.Errorf("%w: pid %d", errCodexAlreadyStopped, proc.PID)
 	}
 
+	stopGrace := r.handshakeTimeout
 	if err := state.cmd.Process.Signal(os.Interrupt); err != nil && !errors.Is(err, os.ErrProcessDone) {
-		return fmt.Errorf("%w: interrupt process: %w", errCodexStopFailed, err)
+		if runtime.GOOS != "windows" {
+			return fmt.Errorf("%w: interrupt process: %w", errCodexStopFailed, err)
+		}
+		if stopGrace > 100*time.Millisecond {
+			stopGrace = 100 * time.Millisecond
+		}
 	}
 
 	select {
@@ -359,7 +366,7 @@ func (r *CodexRunner) Stop(proc *AgentProcess) error {
 			r.logger.Warn("codex process exited with error during stop", "pid", proc.PID, "err", doneErr)
 		}
 		return nil
-	case <-time.After(r.handshakeTimeout):
+	case <-time.After(stopGrace):
 		if state.cmd.Process == nil {
 			return fmt.Errorf("%w: pid %d", errCodexAlreadyStopped, proc.PID)
 		}

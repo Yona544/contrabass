@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -352,21 +353,7 @@ func TestManager_CleanupContinuesWhenBeforeRemoveHookTimesOut(t *testing.T) {
 		mgr.active[issueOK] = okWorkspace
 		mgr.mu.Unlock()
 
-		fakeGitPath := filepath.Join(t.TempDir(), "fake-git.sh")
-		script := "#!/bin/sh\n" +
-			"if [ \"$1\" = \"worktree\" ] && [ \"$2\" = \"remove\" ]; then\n" +
-			"  case \"$3\" in\n" +
-			"    *ISSUE-HOOK-TIMEOUT)\n" +
-			"      echo \"before_remove hook timed out\" >&2\n" +
-			"      exit 1\n" +
-			"      ;;\n" +
-			"    *)\n" +
-			"      rm -rf \"$3\"\n" +
-			"      exit 0\n" +
-			"      ;;\n" +
-			"  esac\n" +
-			"fi\n" +
-			"exec \"" + gitPath + "\" \"$@\"\n"
+		fakeGitPath, script := fakeGitHookTimeoutScript(t, gitPath)
 		writeFakeGit(t, fakeGitPath, script)
 
 		mgr.gitBinary = fakeGitPath
@@ -492,4 +479,44 @@ func writeFakeGit(t *testing.T, path, content string) {
 	// Brief pause to allow the kernel to finish releasing the file after
 	// close+sync — prevents sporadic ETXTBSY on Linux CI runners.
 	time.Sleep(50 * time.Millisecond)
+}
+
+func fakeGitHookTimeoutScript(t *testing.T, gitPath string) (string, string) {
+	t.Helper()
+
+	if runtime.GOOS == "windows" {
+		path := filepath.Join(t.TempDir(), "fake-git.cmd")
+		script := "@echo off\r\n" +
+			"setlocal EnableDelayedExpansion\r\n" +
+			"if not \"%~1\"==\"worktree\" goto passthrough\r\n" +
+			"if not \"%~2\"==\"remove\" goto passthrough\r\n" +
+			"set \"target=%~3\"\r\n" +
+			"if not \"!target:ISSUE-HOOK-TIMEOUT=!\"==\"!target!\" (\r\n" +
+			"  >&2 echo before_remove hook timed out\r\n" +
+			"  exit /b 1\r\n" +
+			")\r\n" +
+			"rmdir /s /q \"%~3\" 2>nul\r\n" +
+			"exit /b 0\r\n" +
+			":passthrough\r\n" +
+			"\"" + gitPath + "\" %*\r\n" +
+			"exit /b %ERRORLEVEL%\r\n"
+		return path, script
+	}
+
+	path := filepath.Join(t.TempDir(), "fake-git.sh")
+	script := "#!/bin/sh\n" +
+		"if [ \"$1\" = \"worktree\" ] && [ \"$2\" = \"remove\" ]; then\n" +
+		"  case \"$3\" in\n" +
+		"    *ISSUE-HOOK-TIMEOUT)\n" +
+		"      echo \"before_remove hook timed out\" >&2\n" +
+		"      exit 1\n" +
+		"      ;;\n" +
+		"    *)\n" +
+		"      rm -rf \"$3\"\n" +
+		"      exit 0\n" +
+		"      ;;\n" +
+		"  esac\n" +
+		"fi\n" +
+		"exec \"" + gitPath + "\" \"$@\"\n"
+	return path, script
 }

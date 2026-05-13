@@ -204,14 +204,14 @@ func TestResolveLogPath(t *testing.T) {
 		want    string
 	}{
 		{"empty output is unchanged", "", "abc12345", ""},
-		{"empty session is unchanged", "/tmp/foo.log", "", "/tmp/foo.log"},
+		{"empty session is unchanged", filepath.FromSlash("/tmp/foo.log"), "", filepath.FromSlash("/tmp/foo.log")},
 		{"both empty is unchanged", "", "", ""},
-		{"splices before extension", "/tmp/contrabass.log", "abc12345", "/tmp/contrabass-abc12345.log"},
-		{"splices when no extension", "/tmp/contrabass", "abc12345", "/tmp/contrabass-abc12345"},
-		{"splices with multi-dot stem", "/tmp/foo.bar.log", "abc12345", "/tmp/foo.bar-abc12345.log"},
-		{"idempotent if already spliced", "/tmp/contrabass-abc12345.log", "abc12345", "/tmp/contrabass-abc12345.log"},
-		{"idempotent for stemless suffix", "/tmp/contrabass-abc12345", "abc12345", "/tmp/contrabass-abc12345"},
-		{"relative path still works", "logs/run.log", "ZZ", "logs/run-ZZ.log"},
+		{"splices before extension", filepath.FromSlash("/tmp/contrabass.log"), "abc12345", filepath.FromSlash("/tmp/contrabass-abc12345.log")},
+		{"splices when no extension", filepath.FromSlash("/tmp/contrabass"), "abc12345", filepath.FromSlash("/tmp/contrabass-abc12345")},
+		{"splices with multi-dot stem", filepath.FromSlash("/tmp/foo.bar.log"), "abc12345", filepath.FromSlash("/tmp/foo.bar-abc12345.log")},
+		{"idempotent if already spliced", filepath.FromSlash("/tmp/contrabass-abc12345.log"), "abc12345", filepath.FromSlash("/tmp/contrabass-abc12345.log")},
+		{"idempotent for stemless suffix", filepath.FromSlash("/tmp/contrabass-abc12345"), "abc12345", filepath.FromSlash("/tmp/contrabass-abc12345")},
+		{"relative path still works", filepath.FromSlash("logs/run.log"), "ZZ", filepath.FromSlash("logs/run-ZZ.log")},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

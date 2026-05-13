@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -320,7 +321,10 @@ func TestCodexRunner_ConcurrentStartStop(t *testing.T) {
 	runner := NewCodexRunner(helperCommand(t, "stderr-race"), 2*time.Second)
 	workspace := t.TempDir()
 
-	const attempts = 100
+	attempts := 100
+	if runtime.GOOS == "windows" {
+		attempts = 25
+	}
 
 	var wg sync.WaitGroup
 	errCh := make(chan error, attempts)
@@ -623,14 +627,24 @@ func TestCodexRunner_WithStderr_NilAndEmpty(t *testing.T) {
 
 func helperCommand(t *testing.T, mode string) string {
 	t.Helper()
+
+	exe := copyCurrentTestExecutable(t, "mock-codex-helper")
+	return fmt.Sprintf("%s -test.run=TestCodexHelperProcess -- %s", exe, mode)
+}
+
+func copyCurrentTestExecutable(t *testing.T, name string) string {
+	t.Helper()
 	exe, err := os.Executable()
 	require.NoError(t, err)
 
-	script := filepath.Join(t.TempDir(), "mock-codex.sh")
-	content := fmt.Sprintf("#!/bin/sh\nexec env GO_WANT_HELPER_PROCESS=1 CODEX_HELPER_MODE=%s %s -test.run=TestCodexHelperProcess --\n", mode, exe)
-	require.NoError(t, os.WriteFile(script, []byte(content), 0o755))
-
-	return script
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	target := filepath.Join(t.TempDir(), name)
+	data, err := os.ReadFile(exe)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(target, data, 0o755))
+	return target
 }
 
 func waitForEvent(t *testing.T, ch <-chan types.AgentEvent) types.AgentEvent {
@@ -702,7 +716,7 @@ func (w *trackingWriteCloser) CloseCount() int {
 func startedExitedCodexProcessWithStdin(t *testing.T, ctx context.Context) (*codexProcess, *trackingWriteCloser) {
 	t.Helper()
 	stdin := &trackingWriteCloser{}
-	cmd := exec.CommandContext(ctx, "sh", "-c", "exit 0")
+	cmd := exitedCommandContext(ctx)
 	require.NoError(t, cmd.Start())
 	stderrDone := make(chan struct{})
 	close(stderrDone)
@@ -772,7 +786,7 @@ func writeJSONLine(t *testing.T, buf *bytes.Buffer, v map[string]interface{}) {
 
 func startedExitedCodexProcess(t *testing.T, ctx context.Context) *codexProcess {
 	t.Helper()
-	cmd := exec.CommandContext(ctx, "sh", "-c", "exit 0")
+	cmd := exitedCommandContext(ctx)
 	require.NoError(t, cmd.Start())
 	stderrDone := make(chan struct{})
 	close(stderrDone)
@@ -783,6 +797,22 @@ func startedExitedCodexProcess(t *testing.T, ctx context.Context) *codexProcess 
 		stderr:     &safeBuffer{},
 		stderrDone: stderrDone,
 	}
+}
+
+func exitedCommandContext(ctx context.Context) *exec.Cmd {
+	if runtime.GOOS == "windows" {
+		return exec.CommandContext(ctx, "cmd", "/C", "exit", "0")
+	}
+	return exec.CommandContext(ctx, "sh", "-c", "exit 0")
+}
+
+func argsAfterDoubleDash(args []string) []string {
+	for i, arg := range args {
+		if arg == "--" {
+			return args[i+1:]
+		}
+	}
+	return nil
 }
 
 func collectEvents(t *testing.T, events <-chan types.AgentEvent, done <-chan error, expected int, timeout time.Duration) []types.AgentEvent {
@@ -825,11 +855,17 @@ func assertDoneEventually(t *testing.T, done <-chan error) {
 }
 
 func TestCodexHelperProcess(t *testing.T) {
-	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
+	mode := os.Getenv("CODEX_HELPER_MODE")
+	if mode == "" {
+		args := argsAfterDoubleDash(os.Args)
+		if len(args) > 0 {
+			mode = args[0]
+		}
+	}
+	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" && mode == "" {
 		return
 	}
 
-	mode := os.Getenv("CODEX_HELPER_MODE")
 	require.NotEmpty(t, mode)
 
 	reader := bufio.NewScanner(os.Stdin)

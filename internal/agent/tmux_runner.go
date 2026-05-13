@@ -59,10 +59,11 @@ type tmuxProcess struct {
 	taskID    string
 	workspace string
 
-	promptPath string
-	events     chan types.AgentEvent
-	done       chan error
-	finished   chan struct{}
+	promptPath  string
+	events      chan types.AgentEvent
+	done        chan error
+	finished    chan struct{}
+	monitorDone chan struct{}
 
 	cancel     context.CancelFunc
 	finishOnce sync.Once
@@ -159,15 +160,16 @@ func (r *TmuxRunner) Start(ctx context.Context, issue types.Issue, workspace str
 	}
 
 	state := &tmuxProcess{
-		pid:        pid,
-		paneID:     paneID,
-		workerID:   workerID,
-		taskID:     taskID,
-		workspace:  workspace,
-		promptPath: promptPath,
-		events:     make(chan types.AgentEvent, 128),
-		done:       make(chan error, 1),
-		finished:   make(chan struct{}),
+		pid:         pid,
+		paneID:      paneID,
+		workerID:    workerID,
+		taskID:      taskID,
+		workspace:   workspace,
+		promptPath:  promptPath,
+		events:      make(chan types.AgentEvent, 128),
+		done:        make(chan error, 1),
+		finished:    make(chan struct{}),
+		monitorDone: make(chan struct{}),
 	}
 
 	if r.dispatchQueue != nil {
@@ -188,7 +190,10 @@ func (r *TmuxRunner) Start(ctx context.Context, issue types.Issue, workspace str
 	r.procs[pid] = state
 	r.mu.Unlock()
 
-	go r.monitorProcess(monitorCtx, bootstrap, state)
+	go func() {
+		defer close(state.monitorDone)
+		r.monitorProcess(monitorCtx, bootstrap, state)
+	}()
 	go func() {
 		select {
 		case <-ctx.Done():
@@ -228,6 +233,7 @@ func (r *TmuxRunner) Stop(proc *AgentProcess) error {
 	killCtx, killCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer killCancel()
 	killErr := r.session.KillPane(killCtx, state.paneID)
+	r.waitForMonitorExit(state)
 	state.finish(killErr)
 	if killErr != nil {
 		return fmt.Errorf("%w: %v", errTmuxRunnerStopFailed, killErr)
@@ -255,10 +261,30 @@ func (r *TmuxRunner) Close() error {
 		if killErr != nil {
 			errs = append(errs, killErr)
 		}
+		r.waitForMonitorExit(proc)
 		proc.finish(killErr)
 	}
 
 	return errors.Join(errs...)
+}
+
+func (r *TmuxRunner) waitForMonitorExit(proc *tmuxProcess) {
+	if proc == nil || proc.monitorDone == nil {
+		return
+	}
+
+	timeout := r.pollInterval + 100*time.Millisecond
+	if timeout < 100*time.Millisecond {
+		timeout = 100 * time.Millisecond
+	}
+	if timeout > 5*time.Second {
+		timeout = 5 * time.Second
+	}
+
+	select {
+	case <-proc.monitorDone:
+	case <-time.After(timeout):
+	}
 }
 
 func (r *TmuxRunner) monitorProcess(ctx context.Context, bootstrap *tmux.WorkerBootstrap, proc *tmuxProcess) {

@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -518,6 +520,11 @@ func newFakeTeamCLIServer(t *testing.T, logPath string) *fakeTeamCLIServer {
 	}))
 	state.httpServer = server
 
+	if runtime.GOOS == "windows" {
+		state.binaryPath = buildFakeTeamCLIHelper(t, server.URL, logPath)
+		return state
+	}
+
 	scriptPath := filepath.Join(t.TempDir(), "fake-omx.py")
 	script := fmt.Sprintf(`#!/usr/bin/env python3
 import json, os, sys, urllib.request
@@ -550,6 +557,102 @@ sys.exit(1)
 	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o755))
 	state.binaryPath = scriptPath
 	return state
+}
+
+func buildFakeTeamCLIHelper(t *testing.T, serverURL, logPath string) string {
+	t.Helper()
+
+	dir := t.TempDir()
+	srcPath := filepath.Join(dir, "fake-team-cli.go")
+	exePath := filepath.Join(dir, "fake-team-cli.exe")
+	src := fmt.Sprintf(`package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"strings"
+)
+
+const base = %q
+const logPath = %q
+
+func main() {
+	os.Exit(run(os.Args[1:]))
+}
+
+func run(args []string) int {
+	if err := appendLog(strings.Join(args, " ") + "\n"); err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	switch {
+	case len(args) >= 2 && args[0] == "team" && args[1] == "api":
+		out, err := post("/api", map[string][]string{"args": args})
+		if err != nil {
+			_, _ = fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		fmt.Print(out)
+		return 0
+	case len(args) >= 2 && args[0] == "team" && args[1] == "shutdown":
+		if _, err := post("/shutdown", map[string][]string{"args": args}); err != nil {
+			_, _ = fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		fmt.Println("Team shutdown complete")
+		return 0
+	case len(args) >= 1 && args[0] == "team":
+		if _, err := post("/start", map[string][]string{"args": args}); err != nil {
+			_, _ = fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		fmt.Println("Team started")
+		return 0
+	default:
+		_, _ = fmt.Fprintln(os.Stderr, "unsupported")
+		return 1
+	}
+}
+
+func post(path string, payload map[string][]string) (string, error) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	resp, err := http.Post(base+path, "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode >= 400 {
+		return "", fmt.Errorf("fake team CLI server returned " + resp.Status + ": " + string(data))
+	}
+	return string(data), nil
+}
+
+func appendLog(text string) error {
+	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	_, err = file.WriteString(text)
+	return err
+}
+`, serverURL, logPath)
+	require.NoError(t, os.WriteFile(srcPath, []byte(src), 0o644))
+	cmd := exec.Command("go", "build", "-o", exePath, srcPath)
+	output, err := cmd.CombinedOutput()
+	require.NoErrorf(t, err, "build fake team CLI helper: %s", output)
+	return exePath
 }
 
 func (s *fakeTeamCLIServer) Close() {

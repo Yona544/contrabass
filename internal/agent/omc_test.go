@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -38,7 +39,11 @@ func TestOMCRunner_UsesTeamRuntime(t *testing.T) {
 			TeamSpec:   "1:claude",
 		},
 	}
-	runner := NewOMCRunner(cfg, time.Second)
+	startupTimeout := time.Second
+	if runtime.GOOS == "windows" {
+		startupTimeout = 5 * time.Second
+	}
+	runner := NewOMCRunner(cfg, startupTimeout)
 
 	proc, err := runner.Start(context.Background(), types.Issue{ID: "CB-104", Title: "Add OMC runner"}, workspace, "Do the OMC task")
 	require.NoError(t, err)

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/charmbracelet/log"
 )
@@ -15,6 +16,23 @@ type LogOptions struct {
 	Output  string    // File path or "" for stdout/stderr
 	Prefix  string    // Logger prefix (e.g., "orchestrator", "agent")
 	Session string    // Optional session ID; if set, splice into Output before its extension
+}
+
+type appendFileWriter struct {
+	path string
+	mu   sync.Mutex
+}
+
+func (w *appendFileWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	f, err := os.OpenFile(w.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+	return f.Write(p)
 }
 
 // ResolveLogPath splices a session ID into a file path before its final extension.
@@ -50,7 +68,8 @@ func NewLogger(opts LogOptions) *log.Logger {
 			// Fallback to stderr if file can't be opened
 			w = os.Stderr
 		} else {
-			w = f
+			_ = f.Close()
+			w = &appendFileWriter{path: output}
 		}
 	} else {
 		w = os.Stderr

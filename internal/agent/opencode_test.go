@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -479,13 +480,21 @@ func TestOpenCodeRunner_EnsureServerStartsWorkspacesInParallel(t *testing.T) {
 	stateDir := t.TempDir()
 	binaryPath := writeTestOpenCodeServerBinary(t, stateDir)
 
-	runner := NewOpenCodeRunner(binaryPath, 8787, "", "", 2*time.Second)
+	startupTimeout := 2 * time.Second
+	readyTimeout := time.Second
+	contextTimeout := 5 * time.Second
+	if runtime.GOOS == "windows" {
+		startupTimeout = 15 * time.Second
+		readyTimeout = 15 * time.Second
+		contextTimeout = 15 * time.Second
+	}
+	runner := NewOpenCodeRunner(binaryPath, 8787, "", "", startupTimeout)
 	runner.SetExtraEnv([]string{"TEST_STATE_DIR=" + stateDir})
 	t.Cleanup(func() {
 		require.NoError(t, runner.Close())
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), contextTimeout)
 	defer cancel()
 
 	workspaceA := filepath.Join(stateDir, "workspace-a")
@@ -513,7 +522,7 @@ func TestOpenCodeRunner_EnsureServerStartsWorkspacesInParallel(t *testing.T) {
 		_, errA := os.Stat(filepath.Join(stateDir, "started-8787"))
 		_, errB := os.Stat(filepath.Join(stateDir, "started-8788"))
 		return errA == nil && errB == nil
-	}, time.Second, 20*time.Millisecond)
+	}, readyTimeout, 20*time.Millisecond)
 
 	require.NoError(t, os.WriteFile(filepath.Join(stateDir, "release"), []byte("ok"), 0o644))
 
@@ -546,6 +555,10 @@ func primeTestOpenCodeServer(r *OpenCodeRunner, workspace, serverURL string, pid
 func writeTestOpenCodeServerBinary(t *testing.T, stateDir string) string {
 	t.Helper()
 
+	if runtime.GOOS == "windows" {
+		return buildTestOpenCodeServerBinary(t, stateDir)
+	}
+
 	scriptPath := filepath.Join(stateDir, "fake-opencode.sh")
 	script := `#!/bin/sh
 set -eu
@@ -574,6 +587,53 @@ sleep 30
 `
 	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o755))
 	return scriptPath
+}
+
+func buildTestOpenCodeServerBinary(t *testing.T, stateDir string) string {
+	t.Helper()
+
+	srcPath := filepath.Join(stateDir, "fake-opencode.go")
+	exePath := filepath.Join(stateDir, "fake-opencode.exe")
+	src := `package main
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+)
+
+func main() {
+	stateDir := os.Getenv("TEST_STATE_DIR")
+	port := "0"
+	for i := 1; i < len(os.Args); i++ {
+		if os.Args[i] == "--port" && i+1 < len(os.Args) {
+			port = os.Args[i+1]
+			i++
+		}
+	}
+
+	if err := os.WriteFile(filepath.Join(stateDir, "started-"+port), nil, 0644); err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(stateDir, "release")); err == nil {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	fmt.Printf("listening on http://127.0.0.1:%s\n", port)
+	for {
+		time.Sleep(time.Hour)
+	}
+}
+`
+	require.NoError(t, os.WriteFile(srcPath, []byte(src), 0o644))
+	cmd := exec.Command("go", "build", "-o", exePath, srcPath)
+	output, err := cmd.CombinedOutput()
+	require.NoErrorf(t, err, "build fake opencode server helper: %s", output)
+	return exePath
 }
 
 func setSSEHeaders(w http.ResponseWriter) {

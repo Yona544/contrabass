@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -363,7 +364,10 @@ func isSignalError(err error) bool {
 	}
 	// Go returns ExitCode() == -1 for signal-terminated processes.
 	// Only treat those as signal errors, not real crashes with non-zero exit codes.
-	return exitErr.ExitCode() == -1
+	if exitErr.ExitCode() == -1 {
+		return true
+	}
+	return runtime.GOOS == "windows" && exitErr.ExitCode() == 1
 }
 
 func (r *OpenCodeRunner) stopServer(server *openCodeServer) error {
@@ -376,8 +380,8 @@ func (r *OpenCodeRunner) stopServer(server *openCodeServer) error {
 		return nil
 	}
 
-	if err := cmd.Process.Signal(os.Interrupt); err != nil && !errors.Is(err, os.ErrProcessDone) {
-		return fmt.Errorf("interrupt opencode server: %w", err)
+	if err := interruptOrKillProcess(cmd.Process); err != nil {
+		return fmt.Errorf("stop opencode server: %w", err)
 	}
 
 	waitCh := make(chan error, 1)
