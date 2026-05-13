@@ -542,8 +542,11 @@ function TimelineSection({
   loading: boolean;
   error: string | null;
 }) {
+  const nodes = timeline?.nodes ?? [];
+  const nodeSyncStates = timeline?.node_sync_states ?? [];
+
   const nodeSync = new Map<string, NodeSyncState>();
-  for (const state of timeline?.node_sync_states ?? []) {
+  for (const state of nodeSyncStates) {
     nodeSync.set(`${state.run_id}:${state.node_id}:${state.target}`, state);
   }
 
@@ -557,14 +560,14 @@ function TimelineSection({
       {error ? (
         <InlineError message={zhCN.detail.timelineLoadFailed(error)} />
       ) : null}
-      {!loading && !error && timeline && timeline.nodes.length === 0 ? (
+      {!loading && !error && timeline && nodes.length === 0 ? (
         <p className="text-xs text-muted-foreground">
           {zhCN.detail.noTimeline}
         </p>
       ) : null}
-      {timeline?.nodes?.length ? (
+      {nodes.length ? (
         <div className="space-y-2">
-          {timeline.nodes.map((node) => (
+          {nodes.map((node) => (
             <TimelineRow
               key={`${node.run_id}-${node.node_id}-${node.attempt ?? 0}`}
               node={node}

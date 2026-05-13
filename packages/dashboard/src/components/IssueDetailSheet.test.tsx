@@ -197,6 +197,33 @@ describe("IssueDetailSheet", () => {
       restore();
     }
   });
+
+  it("tolerates timeline responses with null collection fields", async () => {
+    const { restore } = installFetchMock((url) => {
+      if (url.endsWith("/details")) {
+        return jsonResponse({ error: "provider unavailable" }, 503);
+      }
+      return jsonResponse({
+        issue_id: "issue-1",
+        runs: null,
+        nodes: null,
+        run_sync_states: null,
+        node_sync_states: null,
+        generated_at: "2026-03-05T10:06:00.000Z",
+      });
+    });
+
+    try {
+      render(<IssueDetailSheet data={sheetData()} onOpenChange={() => {}} />);
+
+      await waitFor(() => {
+        expectInDocument(screen.getByText("暂无工作流记录"));
+      });
+      expectInDocument(screen.getByText("详情加载失败：provider unavailable"));
+    } finally {
+      restore();
+    }
+  });
 });
 
 function baseRunningEntry(overrides: Partial<RunningEntry> = {}): RunningEntry {
