@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build windows
 
 package team
 
@@ -6,14 +6,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"syscall"
+
+	"golang.org/x/sys/windows"
 )
 
-// FileLock provides cross-process advisory locking using flock(2).
+// FileLock provides cross-process advisory locking using Windows byte-range locks.
 // It is safe for concurrent use across OS processes accessing the same file.
 type FileLock struct {
-	path string
-	file *os.File
+	path       string
+	file       *os.File
+	overlapped windows.Overlapped
 }
 
 // NewFileLock creates a lock backed by the given file path.
@@ -34,13 +36,14 @@ func (l *FileLock) Lock() error {
 		return fmt.Errorf("open lock file %s: %w", l.path, err)
 	}
 
-	l.file = f
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+	handle := windows.Handle(f.Fd())
+	if err := windows.LockFileEx(handle, windows.LOCKFILE_EXCLUSIVE_LOCK, 0, 1, 0, &l.overlapped); err != nil {
 		_ = f.Close()
 		l.file = nil
-		return fmt.Errorf("flock %s: %w", l.path, err)
+		return fmt.Errorf("lock file %s: %w", l.path, err)
 	}
 
+	l.file = f
 	return nil
 }
 
@@ -50,10 +53,11 @@ func (l *FileLock) Unlock() error {
 		return nil
 	}
 
-	if err := syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN); err != nil {
+	handle := windows.Handle(l.file.Fd())
+	if err := windows.UnlockFileEx(handle, 0, 1, 0, &l.overlapped); err != nil {
 		_ = l.file.Close()
 		l.file = nil
-		return fmt.Errorf("funlock %s: %w", l.path, err)
+		return fmt.Errorf("unlock file %s: %w", l.path, err)
 	}
 
 	err := l.file.Close()

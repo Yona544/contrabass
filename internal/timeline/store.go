@@ -12,7 +12,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -266,15 +265,6 @@ func newFileLock(path string) (*fileLock, error) {
 		return nil, fmt.Errorf("open lock file %s: %w", lockPath, err)
 	}
 	return &fileLock{path: lockPath, file: f}, nil
-}
-
-func (l *fileLock) lock() error {
-	return syscall.Flock(int(l.file.Fd()), syscall.LOCK_EX)
-}
-
-func (l *fileLock) unlock() error {
-	defer l.file.Close()
-	return syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN)
 }
 
 const (

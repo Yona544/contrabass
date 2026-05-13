@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -20,6 +21,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func expectedConfigWorkerModeDefault() string {
+	if runtime.GOOS == "windows" {
+		return "goroutine"
+	}
+	return "tmux"
+}
 
 type mockAgentRunner struct {
 	delay time.Duration
@@ -229,15 +237,15 @@ func TestConfigWorkerModeDefaultsToGoroutine(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name:    "nil config defaults to tmux",
+			name:    "nil config uses platform default",
 			cfg:     nil,
-			want:    "tmux",
+			want:    expectedConfigWorkerModeDefault(),
 			wantErr: false,
 		},
 		{
-			name:    "empty worker mode defaults to tmux",
+			name:    "empty worker mode uses platform default",
 			cfg:     &config.WorkflowConfig{},
-			want:    "tmux",
+			want:    expectedConfigWorkerModeDefault(),
 			wantErr: false,
 		},
 		{

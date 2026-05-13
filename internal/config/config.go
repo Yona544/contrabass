@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"runtime"
 	"slices"
 	"strings"
 )
@@ -53,6 +54,13 @@ const (
 	defaultTeamWorkerMode        = "tmux"
 	defaultWorkflowTimelineDir   = ".contrabass/state/workflow-timeline"
 )
+
+func defaultWorkerMode() string {
+	if runtime.GOOS == "windows" {
+		return "goroutine"
+	}
+	return defaultTeamWorkerMode
+}
 
 const (
 	TeamExecutionModeTeam   = "team"
@@ -659,24 +667,26 @@ func (c *WorkflowConfig) TeamExecutionMode() string {
 
 func (c *WorkflowConfig) WorkerMode() string {
 	if c == nil {
-		return defaultTeamWorkerMode
+		return defaultWorkerMode()
 	}
 
 	mode := strings.TrimSpace(strings.ToLower(c.Team.WorkerMode))
 	if mode == "" {
-		return defaultTeamWorkerMode
+		return defaultWorkerMode()
 	}
 
 	switch mode {
 	case "goroutine":
 		return "goroutine"
+	case "tmux":
+		return "tmux"
 	default:
-		return defaultTeamWorkerMode
+		return defaultWorkerMode()
 	}
 }
 
 // ValidateWorkerMode checks if the worker mode is valid.
-// Empty values are allowed (they default to "tmux").
+// Empty values are allowed and use the platform default.
 // Valid modes are "goroutine" and "tmux".
 // Returns an error for unknown values.
 func (c *WorkflowConfig) ValidateWorkerMode() error {
@@ -686,7 +696,6 @@ func (c *WorkflowConfig) ValidateWorkerMode() error {
 
 	mode := strings.TrimSpace(strings.ToLower(c.Team.WorkerMode))
 	if mode == "" {
-		// Empty is fine, defaults to goroutine
 		return nil
 	}
 

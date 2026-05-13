@@ -27,14 +27,14 @@ Today Contrabass ships with:
 - A Charm v2 terminal UI built with Bubble Tea, Bubbles, and Lip Gloss
 - **Ziikoo** — a React dashboard (neo-brutalism theme, shadcn + Tailwind v4) with a three-pane IDE-style layout, live SSE streaming, queue navigation, stage progression pills, completion ETAs, issue detail sheets with Linear metadata and workflow timelines, team/worker tables, agent logs, and zh-CN localization
 - Go unit/integration tests, TUI snapshot tests, and dashboard component/hook tests
-- A tmux-based multi-process worker mode (default) alongside the in-process goroutine mode, with JSONL event logging, file-based heartbeats, dispatch queue, governance policies, and crash recovery
+- A tmux-based multi-process worker mode (default on macOS/Linux) alongside the in-process goroutine mode (default on Windows), with JSONL event logging, file-based heartbeats, dispatch queue, governance policies, and crash recovery
 
 ## Requirements
 
 - **Go 1.25+**
 - **Bun 1.3+** for the dashboard/landing workspace
 - **Git** (workspace creation uses `git worktree`)
-- **tmux** (required for the default tmux worker mode in team runs; not needed for goroutine mode)
+- **tmux** (required for tmux worker mode; not needed for the default Windows goroutine mode)
 - A supported agent runtime:
   - `codex app-server`
   - `opencode serve`
@@ -74,6 +74,16 @@ make build
 > **Note:** `go install github.com/junhoyeo/contrabass/cmd/contrabass@latest` works for the
 > CLI and TUI, but the embedded web dashboard (`--port`) will be empty because `go install`
 > does not run the JS build step.
+
+### Windows CLI build
+
+On Windows, build the CLI/TUI without the embedded dashboard:
+
+```powershell
+go build -o contrabass.exe ./cmd/contrabass
+```
+
+Team runs default to `goroutine` worker mode on Windows, so `tmux` is not required unless you explicitly set `team.worker_mode: tmux`.
 
 ## Quick start
 
@@ -160,10 +170,10 @@ Teams support two worker modes, configured via `team.worker_mode` in the workflo
 
 | Mode | Description | Default |
 |------|-------------|---------|
-| `tmux` | Each worker runs in a separate tmux pane with process isolation, cross-process IPC via JSONL events, and file-based heartbeats | Yes |
-| `goroutine` | Workers run as goroutines within the contrabass process — lighter weight, no tmux dependency | |
+| `tmux` | Each worker runs in a separate tmux pane with process isolation, cross-process IPC via JSONL events, and file-based heartbeats | Yes on macOS/Linux |
+| `goroutine` | Workers run as goroutines within the contrabass process — lighter weight, no tmux dependency | Yes on Windows |
 
-**tmux mode** (default) provides:
+**tmux mode** (default on macOS/Linux) provides:
 
 - Process isolation — each agent CLI runs in its own tmux pane
 - JSONL event log for cross-process event streaming
@@ -319,10 +329,10 @@ team:
   claim_lease_seconds: 300
   state_dir: .contrabass/state/team
   execution_mode: team    # team | single | auto
-  worker_mode: tmux       # tmux (default) | goroutine
+  worker_mode: tmux       # tmux (default on macOS/Linux) | goroutine (default on Windows)
 ```
 
-- `worker_mode`: Controls how agent workers are spawned. `tmux` (default) uses separate tmux panes with process isolation. `goroutine` runs workers in-process.
+- `worker_mode`: Controls how agent workers are spawned. `tmux` uses separate tmux panes with process isolation. `goroutine` runs workers in-process and is the default on Windows.
 - `execution_mode`: Controls coordination strategy. `team` uses the full phased pipeline, `single` runs one agent at a time, `auto` selects based on task count.
 
 ### Example workflow files

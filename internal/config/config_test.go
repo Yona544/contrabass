@@ -1,11 +1,19 @@
 package config
 
 import (
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func expectedDefaultWorkerMode() string {
+	if runtime.GOOS == "windows" {
+		return "goroutine"
+	}
+	return defaultTeamWorkerMode
+}
 
 func TestWorkflowConfig_DefaultGetters(t *testing.T) {
 	t.Parallel()
@@ -169,7 +177,7 @@ func TestWorkflowConfig_NewSectionDefaults(t *testing.T) {
 	assert.Equal(t, defaultSandbox, nilCfg.CodexSandbox())
 	assert.Equal(t, defaultTeamStateDir, nilCfg.TeamStateDir())
 	assert.Equal(t, defaultTeamExecutionMode, nilCfg.TeamExecutionMode())
-	assert.Equal(t, defaultTeamWorkerMode, nilCfg.WorkerMode())
+	assert.Equal(t, expectedDefaultWorkerMode(), nilCfg.WorkerMode())
 	assert.Equal(t, defaultWorkflowTimelineDir, nilCfg.WorkflowTimelineDir())
 	assert.False(t, nilCfg.LinearIssueDetailsEnabled())
 	assert.False(t, nilCfg.LinearSyncCommentsEnabled())
@@ -190,7 +198,7 @@ func TestWorkflowConfig_NewSectionDefaults(t *testing.T) {
 	assert.Equal(t, defaultSandbox, cfg.CodexSandbox())
 	assert.Equal(t, defaultTeamStateDir, cfg.TeamStateDir())
 	assert.Equal(t, defaultTeamExecutionMode, cfg.TeamExecutionMode())
-	assert.Equal(t, defaultTeamWorkerMode, cfg.WorkerMode())
+	assert.Equal(t, expectedDefaultWorkerMode(), cfg.WorkerMode())
 	assert.Equal(t, defaultWorkflowTimelineDir, cfg.WorkflowTimelineDir())
 
 	legacyCfg := &WorkflowConfig{
@@ -210,14 +218,14 @@ func TestWorkflowConfig_WorkerMode(t *testing.T) {
 		want string
 	}{
 		{
-			name: "nil config defaults to tmux",
+			name: "nil config uses platform default",
 			cfg:  nil,
-			want: defaultTeamWorkerMode,
+			want: expectedDefaultWorkerMode(),
 		},
 		{
-			name: "empty config defaults to tmux",
+			name: "empty config uses platform default",
 			cfg:  &WorkflowConfig{},
-			want: defaultTeamWorkerMode,
+			want: expectedDefaultWorkerMode(),
 		},
 		{
 			name: "explicit tmux mode is preserved",
@@ -234,11 +242,11 @@ func TestWorkflowConfig_WorkerMode(t *testing.T) {
 			want: "tmux",
 		},
 		{
-			name: "unknown mode falls back to tmux",
+			name: "unknown mode falls back to platform default",
 			cfg: &WorkflowConfig{
 				Team: TeamSectionConfig{WorkerMode: "custom"},
 			},
-			want: defaultTeamWorkerMode,
+			want: expectedDefaultWorkerMode(),
 		},
 	}
 
