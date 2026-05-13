@@ -72,19 +72,19 @@ assert(
 );
 
 assert(
-  agentsMarkdown.includes("bun run gitnexus:analyze"),
+  agentsMarkdown.includes("npm run gitnexus:analyze"),
   "AGENTS.md must tell agents to use the pinned GitNexus analyze script",
 );
 assert(
-  agentsMarkdown.includes("bun run gitnexus:detect"),
+  agentsMarkdown.includes("npm run gitnexus:detect"),
   "AGENTS.md must tell agents to use the pinned GitNexus detect script",
 );
 assert(
-  cliSkillMarkdown.includes("bun run gitnexus:analyze"),
+  cliSkillMarkdown.includes("npm run gitnexus:analyze"),
   "GitNexus CLI skill must document the pinned analyze script",
 );
 assert(
-  cliSkillMarkdown.includes("bun run gitnexus:status"),
+  cliSkillMarkdown.includes("npm run gitnexus:status"),
   "GitNexus CLI skill must document the pinned status script",
 );
 
