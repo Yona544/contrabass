@@ -193,6 +193,41 @@ export interface BuildInfo {
   date: string;
 }
 
+export interface RuntimeConfig {
+  model_name: string;
+  project_url: string;
+  tracker_type: string;
+  tracker_scope: string;
+  agent_type: string;
+  max_concurrency: number;
+  poll_interval_ms: number;
+  max_retry_backoff_ms: number;
+  agent_timeout_ms: number;
+  stall_timeout_ms: number;
+  workspace_base_dir: string;
+  hooks: RuntimeHooksConfig;
+  team: RuntimeTeamConfig;
+  linear: RuntimeLinearConfig;
+}
+export interface RuntimeHooksConfig {
+  before_run: boolean;
+  after_run: boolean;
+  before_remove: boolean;
+}
+export interface RuntimeTeamConfig {
+  max_workers: number;
+  max_fix_loops: number;
+  claim_lease_seconds: number;
+  state_dir: string;
+  execution_mode: string;
+  worker_mode: string;
+}
+export interface RuntimeLinearConfig {
+  issue_details_enabled: boolean;
+  sync_comments_enabled: boolean;
+  sync_comments_mode: string;
+}
+
 export interface StateSnapshot {
   stats: Stats;
   running: RunningEntry[];
@@ -200,6 +235,7 @@ export interface StateSnapshot {
   issues: Record<string, Issue>;
   generated_at: string;
   build_info?: BuildInfo;
+  runtime?: RuntimeConfig;
 }
 
 export interface TeamPhaseState {

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/junhoyeo/contrabass/internal/config"
 	"github.com/junhoyeo/contrabass/internal/types"
 )
 
@@ -29,6 +30,7 @@ type StateSnapshot struct {
 	Issues      map[string]types.Issue `json:"issues"`
 	GeneratedAt time.Time              `json:"generated_at"`
 	BuildInfo   BuildInfo              `json:"build_info"`
+	Runtime     RuntimeConfigSnapshot  `json:"runtime"`
 }
 
 // BuildInfo carries the ldflags-injected version metadata so dashboards and
@@ -37,6 +39,44 @@ type BuildInfo struct {
 	Version string `json:"version"`
 	Commit  string `json:"commit"`
 	Date    string `json:"date"`
+}
+
+type RuntimeConfigSnapshot struct {
+	ModelName         string                      `json:"model_name"`
+	ProjectURL        string                      `json:"project_url"`
+	TrackerType       string                      `json:"tracker_type"`
+	TrackerScope      string                      `json:"tracker_scope"`
+	AgentType         string                      `json:"agent_type"`
+	MaxConcurrency    int                         `json:"max_concurrency"`
+	PollIntervalMs    int                         `json:"poll_interval_ms"`
+	MaxRetryBackoffMs int                         `json:"max_retry_backoff_ms"`
+	AgentTimeoutMs    int                         `json:"agent_timeout_ms"`
+	StallTimeoutMs    int                         `json:"stall_timeout_ms"`
+	WorkspaceBaseDir  string                      `json:"workspace_base_dir"`
+	Hooks             RuntimeHooksSnapshot        `json:"hooks"`
+	Team              RuntimeTeamConfigSnapshot   `json:"team"`
+	Linear            RuntimeLinearConfigSnapshot `json:"linear"`
+}
+
+type RuntimeHooksSnapshot struct {
+	BeforeRun    bool `json:"before_run"`
+	AfterRun     bool `json:"after_run"`
+	BeforeRemove bool `json:"before_remove"`
+}
+
+type RuntimeTeamConfigSnapshot struct {
+	MaxWorkers        int    `json:"max_workers"`
+	MaxFixLoops       int    `json:"max_fix_loops"`
+	ClaimLeaseSeconds int    `json:"claim_lease_seconds"`
+	StateDir          string `json:"state_dir"`
+	ExecutionMode     string `json:"execution_mode"`
+	WorkerMode        string `json:"worker_mode"`
+}
+
+type RuntimeLinearConfigSnapshot struct {
+	IssueDetailsEnabled bool   `json:"issue_details_enabled"`
+	SyncCommentsEnabled bool   `json:"sync_comments_enabled"`
+	SyncCommentsMode    string `json:"sync_comments_mode"`
 }
 
 // RunningEntry represents a running issue execution in the snapshot.
@@ -157,6 +197,53 @@ func (o *Orchestrator) Snapshot() StateSnapshot {
 		Issues:      issuesCopy,
 		GeneratedAt: generatedAt,
 		BuildInfo:   o.buildInfo,
+		Runtime:     runtimeConfigSnapshot(o.currentConfig()),
+	}
+}
+
+func runtimeConfigSnapshot(cfg *config.WorkflowConfig) RuntimeConfigSnapshot {
+	if cfg == nil {
+		cfg = &config.WorkflowConfig{}
+	}
+
+	modelName, _ := cfg.Model()
+	projectURL := cfg.TrackerProjectURL()
+	trackerType := cfg.TrackerType()
+	trackerScope := projectURL
+	if trackerType == "internal" || trackerType == "local" {
+		trackerScope = cfg.LocalBoardDir()
+	}
+
+	return RuntimeConfigSnapshot{
+		ModelName:         modelName,
+		ProjectURL:        projectURL,
+		TrackerType:       trackerType,
+		TrackerScope:      trackerScope,
+		AgentType:         cfg.AgentType(),
+		MaxConcurrency:    cfg.MaxConcurrency(),
+		PollIntervalMs:    cfg.PollIntervalMs(),
+		MaxRetryBackoffMs: cfg.MaxRetryBackoffMs(),
+		AgentTimeoutMs:    cfg.AgentTimeoutMs(),
+		StallTimeoutMs:    cfg.StallTimeoutMs(),
+		WorkspaceBaseDir:  cfg.WorkspaceBaseDir(),
+		Hooks: RuntimeHooksSnapshot{
+			BeforeRun:    strings.TrimSpace(cfg.HookBeforeRun()) != "",
+			AfterRun:     strings.TrimSpace(cfg.HookAfterRun()) != "",
+			BeforeRemove: strings.TrimSpace(cfg.HookBeforeRemove()) != "",
+		},
+		Team: RuntimeTeamConfigSnapshot{
+			MaxWorkers:        cfg.TeamMaxWorkers(),
+			MaxFixLoops:       cfg.TeamMaxFixLoops(),
+			ClaimLeaseSeconds: cfg.TeamClaimLeaseSeconds(),
+			StateDir:          cfg.TeamStateDir(),
+			ExecutionMode:     cfg.TeamExecutionMode(),
+			WorkerMode:        cfg.WorkerMode(),
+		},
+		Linear: RuntimeLinearConfigSnapshot{
+			IssueDetailsEnabled: cfg.LinearIssueDetailsEnabled(),
+			SyncCommentsEnabled: cfg.LinearSyncCommentsEnabled(),
+			SyncCommentsMode:    cfg.LinearSyncCommentsMode(),
+		},
 	}
 }
 

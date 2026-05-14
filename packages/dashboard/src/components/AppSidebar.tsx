@@ -22,9 +22,11 @@ export type QueueId =
   | 'recent_done'
   | 'canceled'
 
+export type ViewId = QueueId | 'settings'
+
 interface AppSidebarProps {
-  active: QueueId
-  onSelect: (id: QueueId) => void
+  active: ViewId
+  onSelect: (id: ViewId) => void
   counts: Partial<Record<QueueId, number>>
   connected: boolean
   runtimeLabel: string
@@ -56,7 +58,7 @@ function NavGroup({
 }: {
   label: string
   items: NavItem[]
-  active: QueueId
+  active: ViewId
   counts: Partial<Record<QueueId, number>>
   onSelect: (id: QueueId) => void
 }) {
@@ -128,7 +130,12 @@ export function AppSidebar({ active, onSelect, counts, connected, runtimeLabel }
       <SidebarFooter className="p-3">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton tooltip="Settings (TODO)" className="h-9 rounded-xl text-muted-foreground hover:text-foreground">
+            <SidebarMenuButton
+              isActive={active === 'settings'}
+              onClick={() => onSelect('settings')}
+              tooltip="设置"
+              className="h-9 rounded-xl text-muted-foreground hover:text-foreground data-active:text-foreground"
+            >
               <Settings className="h-4 w-4" />
               <span>设置</span>
             </SidebarMenuButton>

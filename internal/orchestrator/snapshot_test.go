@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/junhoyeo/contrabass/internal/config"
 	"github.com/junhoyeo/contrabass/internal/types"
 )
 
@@ -60,6 +61,70 @@ func TestSnapshot_ReturnsCorrectStats(t *testing.T) {
 	assert.Equal(t, int64(2000), snapshot.Stats.TotalTokensOut)
 	assert.Equal(t, 42, snapshot.Stats.PollCount)
 	assert.NotZero(t, snapshot.GeneratedAt)
+}
+
+func TestSnapshot_IncludesRuntimeConfig(t *testing.T) {
+	cfg := &config.WorkflowConfig{
+		MaxConcurrencyRaw:    4,
+		PollIntervalMsRaw:    1500,
+		MaxRetryBackoffMsRaw: 45000,
+		AgentTimeoutMsRaw:    120000,
+		StallTimeoutMsRaw:    30000,
+		ModelRaw:             "gpt-5-codex",
+		ProjectURLRaw:        "https://linear.app/example/project/contrabass",
+		Tracker: config.TrackerConfig{
+			Type:     "internal",
+			BoardDir: ".contrabass/runtime-board",
+		},
+		Workspace: config.WorkspaceConfig{
+			BaseDir: "worktrees",
+		},
+		Hooks: config.HooksConfig{
+			BeforeRun: "before-run",
+			AfterRun:  "after-run",
+		},
+		Agent: config.AgentConfig{
+			Type: "codex",
+		},
+		Team: config.TeamSectionConfig{
+			MaxWorkers:        3,
+			MaxFixLoops:       2,
+			ClaimLeaseSeconds: 90,
+			StateDir:          ".contrabass/team-runtime",
+			ExecutionMode:     "team",
+			WorkerMode:        "goroutine",
+		},
+	}
+	o := &Orchestrator{
+		running:    make(map[string]*runEntry),
+		backoff:    []types.BackoffEntry{},
+		issueCache: make(map[string]types.Issue),
+		config:     &staticConfig{cfg: cfg},
+		stats:      Stats{},
+	}
+
+	snapshot := o.Snapshot()
+
+	assert.Equal(t, "gpt-5-codex", snapshot.Runtime.ModelName)
+	assert.Equal(t, "https://linear.app/example/project/contrabass", snapshot.Runtime.ProjectURL)
+	assert.Equal(t, "internal", snapshot.Runtime.TrackerType)
+	assert.Equal(t, ".contrabass/runtime-board", snapshot.Runtime.TrackerScope)
+	assert.Equal(t, "codex", snapshot.Runtime.AgentType)
+	assert.Equal(t, 4, snapshot.Runtime.MaxConcurrency)
+	assert.Equal(t, 1500, snapshot.Runtime.PollIntervalMs)
+	assert.Equal(t, 45000, snapshot.Runtime.MaxRetryBackoffMs)
+	assert.Equal(t, 120000, snapshot.Runtime.AgentTimeoutMs)
+	assert.Equal(t, 30000, snapshot.Runtime.StallTimeoutMs)
+	assert.Equal(t, "worktrees", snapshot.Runtime.WorkspaceBaseDir)
+	assert.True(t, snapshot.Runtime.Hooks.BeforeRun)
+	assert.True(t, snapshot.Runtime.Hooks.AfterRun)
+	assert.False(t, snapshot.Runtime.Hooks.BeforeRemove)
+	assert.Equal(t, 3, snapshot.Runtime.Team.MaxWorkers)
+	assert.Equal(t, 2, snapshot.Runtime.Team.MaxFixLoops)
+	assert.Equal(t, 90, snapshot.Runtime.Team.ClaimLeaseSeconds)
+	assert.Equal(t, ".contrabass/team-runtime", snapshot.Runtime.Team.StateDir)
+	assert.Equal(t, "team", snapshot.Runtime.Team.ExecutionMode)
+	assert.Equal(t, "goroutine", snapshot.Runtime.Team.WorkerMode)
 }
 
 func TestSnapshot_IncludesRunningEntries(t *testing.T) {

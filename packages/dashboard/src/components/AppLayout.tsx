@@ -15,10 +15,11 @@ import type {
   StateSnapshot,
 } from "../types";
 import type { QueueEventPayload } from "../hooks/useSSE";
-import { AppSidebar, type QueueId } from "./AppSidebar";
+import { AppSidebar, type QueueId, type ViewId } from "./AppSidebar";
 import { IssueDataTable } from "./IssueDataTable";
 import { IssueDetailSheet } from "./IssueDetailSheet";
 import { QueuePanel } from "./QueuePanel";
+import { RuntimeSettings } from "./RuntimeSettings";
 
 interface AppLayoutProps {
   state: StateSnapshot;
@@ -102,7 +103,7 @@ export function AppLayout({
   runtimeLabel,
   queueEvents = [],
 }: AppLayoutProps) {
-  const [active, setActive] = useState<QueueId>("running");
+  const [active, setActive] = useState<ViewId>("running");
   const [selection, setSelection] = useState<DetailSelection | null>(null);
   const lastKnownSheetRef = useRef<SheetData | null>(null);
 
@@ -194,7 +195,8 @@ export function AppLayout({
     if (sheetData) lastKnownSheetRef.current = sheetData;
   }, [sheetData]);
 
-  const currentQueue = queues[active];
+  const activeQueueId = active === "settings" ? null : active;
+  const currentQueue = activeQueueId ? queues[activeQueueId] : null;
   const queuedTotal =
     (counts.backoff ?? 0) + (counts.todo ?? 0) + (counts.backlog ?? 0);
   const doneTotal = (counts.recent_done ?? 0) + (counts.canceled ?? 0);
@@ -223,12 +225,18 @@ export function AppLayout({
               Control Queue
             </p>
             <h2 className="truncate text-lg font-semibold leading-tight text-foreground">
-              {currentQueue.title}
+              {currentQueue?.title ?? "运行设置"}
             </h2>
           </div>
-          <span className="ml-auto rounded-full border border-border/70 bg-card px-3 py-1 text-xs font-medium text-muted-foreground shadow-xs">
-            {currentQueue.rows.length} 项
-          </span>
+          {currentQueue ? (
+            <span className="ml-auto rounded-full border border-border/70 bg-card px-3 py-1 text-xs font-medium text-muted-foreground shadow-xs">
+              {currentQueue.rows.length} 项
+            </span>
+          ) : (
+            <span className="ml-auto rounded-full border border-border/70 bg-card px-3 py-1 text-xs font-medium text-muted-foreground shadow-xs">
+              只读
+            </span>
+          )}
           {state.build_info && state.build_info.commit ? (
             <span
               className="rounded-full border border-border/70 bg-card px-3 py-1 font-mono text-[10px] uppercase tracking-wide text-muted-foreground shadow-xs"
@@ -240,42 +248,52 @@ export function AppLayout({
         </header>
         <div className="min-h-0 flex-1 overflow-hidden p-3 sm:p-4 lg:p-6">
           <div className="mx-auto flex h-full max-w-[1600px] min-w-0 flex-col gap-4">
-            <section
-              className="grid grid-cols-2 gap-3 lg:grid-cols-4"
-              aria-label="队列摘要"
-            >
-              <OverviewCard
-                label="连接"
-                value={connected ? "在线" : "离线"}
-                tone={connected ? "live" : "warn"}
-              />
-              <OverviewCard
-                label="运行负载"
-                value={`${state.stats.Running}/${state.stats.MaxAgents}`}
-              />
-              <OverviewCard label="待处理" value={queuedTotal} />
-              <OverviewCard
-                label="归档"
-                value={doneTotal}
-                subtle={runtimeLabel}
-              />
-            </section>
+            {currentQueue ? (
+              <>
+                <section
+                  className="grid grid-cols-2 gap-3 lg:grid-cols-4"
+                  aria-label="队列摘要"
+                >
+                  <OverviewCard
+                    label="连接"
+                    value={connected ? "在线" : "离线"}
+                    tone={connected ? "live" : "warn"}
+                  />
+                  <OverviewCard
+                    label="运行负载"
+                    value={`${state.stats.Running}/${state.stats.MaxAgents}`}
+                  />
+                  <OverviewCard label="待处理" value={queuedTotal} />
+                  <OverviewCard
+                    label="归档"
+                    value={doneTotal}
+                    subtle={runtimeLabel}
+                  />
+                </section>
 
-            <QueuePanel events={queueEvents} />
+                <QueuePanel events={queueEvents} />
 
-            <section className="min-h-0 flex-1 overflow-hidden rounded-2xl border border-border/70 bg-card/80 shadow-lg ring-1 ring-white/5">
-              <IssueDataTable
-                entries={currentQueue.rows}
-                emptyText={currentQueue.emptyText}
-                onSelect={(entry) =>
-                  setSelection({
-                    kind: queueIdToKind(active),
-                    issueId: entry.issue_id,
-                  })
-                }
-                selectedId={selection?.issueId ?? null}
+                <section className="min-h-0 flex-1 overflow-hidden rounded-2xl border border-border/70 bg-card/80 shadow-lg ring-1 ring-white/5">
+                  <IssueDataTable
+                    entries={currentQueue.rows}
+                    emptyText={currentQueue.emptyText}
+                    onSelect={(entry) =>
+                      setSelection({
+                        kind: queueIdToKind(currentQueue.id),
+                        issueId: entry.issue_id,
+                      })
+                    }
+                    selectedId={selection?.issueId ?? null}
+                  />
+                </section>
+              </>
+            ) : (
+              <RuntimeSettings
+                state={state}
+                connected={connected}
+                runtimeLabel={runtimeLabel}
               />
-            </section>
+            )}
           </div>
         </div>
       </SidebarInset>
