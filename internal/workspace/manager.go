@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/junhoyeo/contrabass/internal/hooks"
 	"github.com/junhoyeo/contrabass/internal/types"
 )
 
@@ -20,8 +21,9 @@ import (
 var issueIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 type Manager struct {
-	baseDir   string
-	gitBinary string
+	baseDir          string
+	gitBinary        string
+	beforeRemoveHook string
 
 	mu         sync.RWMutex
 	active     map[string]string
@@ -34,6 +36,13 @@ func NewManager(baseDir string) *Manager {
 		gitBinary: "git",
 		active:    make(map[string]string),
 	}
+}
+
+func (m *Manager) SetBeforeRemoveHook(command string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.beforeRemoveHook = command
 }
 
 func (m *Manager) Create(ctx context.Context, issue types.Issue) (string, error) {
@@ -160,6 +169,8 @@ func (m *Manager) Cleanup(ctx context.Context, issueID string) error {
 		return nil
 	}
 
+	m.runBeforeRemoveHook(ctx, issueID, workspacePath)
+
 	output, err := m.runGit(ctx, "worktree", "remove", workspacePath, "--force")
 	if err != nil {
 		if !strings.Contains(output, "is not a working tree") {
@@ -173,6 +184,23 @@ func (m *Manager) Cleanup(ctx context.Context, issueID string) error {
 	m.issueLocks.Delete(issueID)
 
 	return nil
+}
+
+func (m *Manager) runBeforeRemoveHook(ctx context.Context, issueID, workspacePath string) {
+	m.mu.RLock()
+	command := m.beforeRemoveHook
+	m.mu.RUnlock()
+
+	_ = hooks.Run(ctx, hooks.Options{
+		Name:    "before_remove",
+		Command: command,
+		Dir:     workspacePath,
+		Env: map[string]string{
+			"CONTRABASS_HOOK":      "before_remove",
+			"CONTRABASS_ISSUE_ID":  issueID,
+			"CONTRABASS_WORKSPACE": workspacePath,
+		},
+	})
 }
 
 // CleanupAll snapshots issue IDs tracked at the call start and cleans up only

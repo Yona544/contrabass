@@ -261,6 +261,7 @@ func run(cfgPath string, noTUI bool, logFile, logLevel string, dryRun bool, port
 		return fmt.Errorf("getting working directory: %w", err)
 	}
 	workspaceMgr := workspace.NewManager(repoPath)
+	workspaceMgr.SetBeforeRemoveHook(cfg.HookBeforeRemove())
 
 	// 8. Create agent runner (reuses createRunner from team.go)
 	agentRunner, err := createRunner(cfg, "orchestrator", nil)

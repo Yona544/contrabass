@@ -162,7 +162,7 @@ contrabass team run --config workflow.md [flags]
 - `WORKFLOW.md` is watched with `fsnotify`; on parse errors, Contrabass keeps the last known good config.
 - The Codex runner speaks newline-delimited JSON (`JSONL`) to `codex app-server` rather than `Content-Length` framed messages. See [`docs/codex-protocol.md`](docs/codex-protocol.md).
 - The Codex runner handles `-32001` server overload errors with exponential backoff retry (up to 5 attempts) and detects stalled streams via configurable read timeouts.
-- The workflow parser already accepts more Symphony-shaped fields than the runtime fully consumes today. For example, `workspace`, `hooks`, and some `codex` settings are parsed, but the current runtime mainly uses tracker selection, timeouts, retry settings, binary paths, and prompt/template fields.
+- Workflow `hooks.before_run`, `hooks.after_run`, and `hooks.before_remove` execute as shell commands from the issue workspace with `CONTRABASS_*` context variables. `before_run` failure prevents agent launch and queues a retry; `after_run` and `before_remove` are best-effort cleanup hooks.
 
 ### Team worker modes
 

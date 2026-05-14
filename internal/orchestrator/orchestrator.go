@@ -509,6 +509,17 @@ func (o *Orchestrator) dispatchIssue(
 	}
 	runAttempt.ClaimHeadSha = sha
 
+	if err := o.runWorkflowHook(ctx, "before_run", cfg.HookBeforeRun(), issue, runAttempt); err != nil {
+		if cleanupErr := o.workspace.Cleanup(ctx, issue.ID); cleanupErr != nil {
+			logging.LogIssueEvent(o.logger, issue.ID, "workspace_cleanup_failed", "stage", "before_run_hook", "err", cleanupErr)
+		}
+		logging.LogIssueEvent(o.logger, issue.ID, "before_run_hook_failed", "err", err)
+		o.recordTimelineNode(ctx, issue, runAttempt,
+			"before-run-hook-failed", timeline.NodeStatusFailed, "Before-run hook failed", "Contrabass could not complete the before_run workflow hook before agent start.", err.Error(), true)
+		o.releaseClaimAndQueueContinuation(ctx, issue.ID, runAttempt.Attempt, err)
+		return
+	}
+
 	if phaseErr := TransitionRunPhase(runAttempt.Phase, types.BuildingPrompt); phaseErr == nil {
 		runAttempt.Phase = types.BuildingPrompt
 	} else {

@@ -373,6 +373,7 @@ func runTeamWithHooks(opts teamRunOptions, hooks teamRunHooks) error {
 		return fmt.Errorf("getting working directory: %w", err)
 	}
 	workspaceMgr := workspace.NewManager(repoPath)
+	workspaceMgr.SetBeforeRemoveHook(cfg.HookBeforeRemove())
 
 	runner, err := createRunner(cfg, teamName, logger)
 	if err != nil {

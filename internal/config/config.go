@@ -134,8 +134,6 @@ type WorkspaceConfig struct {
 }
 
 type HooksConfig struct {
-	// TODO: Hook fields are parsed from workflow YAML, but execution is not
-	// implemented yet.
 	BeforeRun    string `yaml:"before_run"`
 	AfterRun     string `yaml:"after_run"`
 	BeforeRemove string `yaml:"before_remove"`

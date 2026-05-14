@@ -132,6 +132,7 @@ func (o *Orchestrator) completeRun(ctx context.Context, issueID string, doneErr 
 				"branch", entry.issue.BranchName,
 				"head", finalAttempt.ClaimHeadSha,
 			)
+			o.runAfterRunHook(ctx, issueID, entry.issue, finalAttempt)
 			o.pauseUnverifiedSuccess(ctx, entry, finalAttempt,
 				"success_unverified_branch_unchanged", nil)
 			return
@@ -150,6 +151,7 @@ func (o *Orchestrator) completeRun(ctx context.Context, issueID string, doneErr 
 				"head", finalAttempt.ClaimHeadSha,
 				"err", errText,
 			)
+			o.runAfterRunHook(ctx, issueID, entry.issue, finalAttempt)
 			o.pauseUnverifiedSuccess(ctx, entry, finalAttempt,
 				"success_unverified_workspace_invalid", err)
 			return
@@ -173,6 +175,8 @@ func (o *Orchestrator) completeRun(ctx context.Context, issueID string, doneErr 
 	nodeSuffix, nodeStatus, nodeTitle := timelineStatusForPhase(finalAttempt.Phase)
 	o.recordTimelineNode(ctx, entry.issue, finalAttempt,
 		nodeSuffix, nodeStatus, nodeTitle, "Agent process reached a durable terminal state.", finalAttempt.Error, true)
+
+	o.runAfterRunHook(ctx, issueID, entry.issue, finalAttempt)
 
 	if err := o.workspace.Cleanup(ctx, issueID); err != nil {
 		logging.LogIssueEvent(o.logger, issueID, "workspace_cleanup_failed", "stage", "complete_run", "err", err)
