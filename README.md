@@ -464,18 +464,29 @@ make build            # build dashboard, then build ./contrabass
 make build-dashboard  # build packages/dashboard/dist only
 make build-landing    # build packages/landing/dist only
 make test             # go test ./... -count=1
+make test-local-go    # stable Go gate for local work
 make test-dashboard   # bun test in packages/dashboard
 make test-landing     # astro check in packages/landing
-make test-quick       # recommended local validation path
-make test-all         # Go + dashboard tests + landing checks
+make test-local       # recommended stable local validation path
+make test-quick       # alias for test-local
+make test-all         # broad Go + dashboard tests + landing checks
 make ci               # lint + test-quick + binary/dashboard build + landing build
 make lint             # go vet ./...
 make clean            # remove built artifacts
 make release-dry      # dry-run GoReleaser locally (skips publish)
 ```
 
-For day-to-day local validation, use `make test-quick`.
-For a fuller pre-push or CI-style pass, use `make ci`.
+For day-to-day local validation, use `make test-local` or
+`bun run test:local`. The local Go gate intentionally skips the known
+long-running Windows-flaky packages (`internal/agent`, `internal/orchestrator`,
+`internal/team`, and `tests/e2e`) while covering the stable CLI, config,
+tracker, workspace, TUI, web, and support packages. When touching a skipped
+package, run a focused package test such as `go test ./internal/orchestrator -run
+TestName -count=1`.
+
+For a fuller pre-push or CI-style pass, use `make ci`. Use `make test-all`
+when you specifically want the broad Go suite and can tolerate the known
+Windows flakes/timeouts.
 
 ### Dashboard development
 

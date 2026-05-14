@@ -1,7 +1,7 @@
 # Contrabass — Build Tooling
 # Build order: dashboard SPA must build before Go binary (embed.FS requires dist/)
 
-.PHONY: build-dashboard build-landing build dev-dashboard dev-dashboard-stack dev-landing dev test test-race test-cover test-dashboard test-landing test-quick test-all ci clean lint release-dry
+.PHONY: build-dashboard build-landing build dev-dashboard dev-dashboard-stack dev-landing dev test test-race test-cover test-dashboard test-landing test-local-go test-local test-quick test-all ci clean lint release-dry
 
 # Build the React dashboard SPA to packages/dashboard/dist/
 build-dashboard:
@@ -52,11 +52,21 @@ test-dashboard:
 test-landing:
 	cd packages/landing && bun run check
 
-# Run the recommended local validation path
-test-quick: test test-dashboard test-landing
+# Run the stable local Go package gate. This intentionally excludes packages
+# with known long-running Windows flakes; use focused package tests when touching
+# those paths.
+test-local-go:
+	node scripts/local-verify.mjs --go-only
 
-# Run all tests/checks
-test-all: test-quick
+# Run the recommended stable local validation path
+test-local:
+	node scripts/local-verify.mjs
+
+# Backward-compatible alias for the recommended local validation path
+test-quick: test-local
+
+# Run all tests/checks, including broad Go tests
+test-all: test test-dashboard test-landing
 
 # Run the preferred CI/local full validation flow
 # Dashboard must be built first: embed_dashboard.go requires packages/dashboard/dist/

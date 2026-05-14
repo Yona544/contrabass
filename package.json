@@ -10,6 +10,9 @@
     "gitnexus:detect": "node scripts/gitnexus.mjs detect-changes",
     "gitnexus:doctor": "node scripts/gitnexus.mjs doctor",
     "gitnexus:status": "node scripts/gitnexus.mjs status",
+    "test:local": "node scripts/local-verify.mjs",
+    "test:local-go": "node scripts/local-verify.mjs --go-only",
+    "test:local-verify": "node --test scripts/local-verify.test.mjs",
     "test:gitnexus": "node scripts/gitnexus-smoke.mjs"
   },
   "workspaces": [
