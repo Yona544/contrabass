@@ -156,6 +156,9 @@ func (m *Manager) Cleanup(ctx context.Context, issueID string) error {
 	if issueID == "" {
 		return nil
 	}
+	if !issueIDPattern.MatchString(issueID) {
+		return fmt.Errorf("issue id %q contains invalid characters", issueID)
+	}
 
 	unlock := m.lockIssue(issueID)
 	defer unlock()

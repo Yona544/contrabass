@@ -102,6 +102,21 @@ func TestManager_CleanupAllRemovesActiveWorktrees(t *testing.T) {
 	}
 }
 
+func TestManager_CleanupRejectsInvalidIssueID(t *testing.T) {
+	t.Parallel()
+
+	repoDir := t.TempDir()
+	mgr := NewManager(repoDir)
+	keepPath := filepath.Join(repoDir, "keep")
+	require.NoError(t, os.MkdirAll(keepPath, 0o755))
+
+	err := mgr.Cleanup(context.Background(), "../keep")
+
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "invalid characters")
+	assert.DirExists(t, keepPath)
+}
+
 func TestManager_CleanupAllBestEffortOnError(t *testing.T) {
 	t.Parallel()
 
