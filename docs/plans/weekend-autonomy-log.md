@@ -44,3 +44,12 @@
 - Tests run: `go test ./internal/update -run 'TestCheckUsesFreshCachedLatest|TestCheckFetchesAndPersistsLatest|TestStateReadWrite|TestReadStateMissingOrInvalid' -count=1 -v`, `go test ./internal/update -coverprofile=$coverPath -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect`.
 - Commit hash: `d4b0eea`.
 - Remaining follow-up: avoid production edits in `internal/update` without a stronger reason; GitNexus reports `readState` as HIGH impact because CLI and team-worker flows depend on it.
+
+## 2026-05-15 - timeline listing and comment coverage
+
+- Task selected: add tests for timeline issue listing and Linear comment rendering.
+- Why it was valuable: `ListIssueIDs` and the render helpers were low-risk coverage gaps in a package that persists workflow progress and publishes Linear comments.
+- Files changed: `internal/timeline/store_test.go`, `internal/timeline/render_test.go`.
+- Tests run: `go test ./internal/timeline -run 'TestStoreListIssueIDs|TestRenderRunRootComment|TestRenderNodeComment' -count=1 -v`, `go test ./internal/timeline -coverprofile=$timelineCover -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect`.
+- Commit hash: `686c5fb`.
+- Remaining follow-up: leave `RunID`, `NodeID`, `Drain`, and `Run` production behavior untouched without a concrete need; GitNexus reports those paths as HIGH impact.
