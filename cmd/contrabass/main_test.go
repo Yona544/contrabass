@@ -381,6 +381,46 @@ func TestLinearAPIKey(t *testing.T) {
 	}
 }
 
+func TestTrackerAssigneeID(t *testing.T) {
+	tests := []struct {
+		name        string
+		envAssignee string
+		cfg         *config.WorkflowConfig
+		want        string
+	}{
+		{
+			name:        "tracker assignee_id takes precedence",
+			envAssignee: "env-assignee",
+			cfg:         &config.WorkflowConfig{Tracker: config.TrackerConfig{AssigneeID: "config-assignee"}},
+			want:        "config-assignee",
+		},
+		{
+			name:        "LINEAR_ASSIGNEE fallback",
+			envAssignee: "env-assignee",
+			cfg:         &config.WorkflowConfig{},
+			want:        "env-assignee",
+		},
+		{
+			name:        "nil config uses LINEAR_ASSIGNEE fallback",
+			envAssignee: "env-assignee",
+			cfg:         nil,
+			want:        "env-assignee",
+		},
+		{
+			name: "empty config and env return empty",
+			cfg:  &config.WorkflowConfig{},
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("LINEAR_ASSIGNEE", tt.envAssignee)
+			assert.Equal(t, tt.want, trackerAssigneeID(tt.cfg))
+		})
+	}
+}
+
 // --- Tests for run ---
 
 func TestRun_ConfigParseError(t *testing.T) {
