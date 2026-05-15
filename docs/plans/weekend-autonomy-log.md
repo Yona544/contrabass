@@ -53,3 +53,12 @@
 - Tests run: `go test ./internal/timeline -run 'TestStoreListIssueIDs|TestRenderRunRootComment|TestRenderNodeComment' -count=1 -v`, `go test ./internal/timeline -coverprofile=$timelineCover -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect`.
 - Commit hash: `686c5fb`.
 - Remaining follow-up: leave `RunID`, `NodeID`, `Drain`, and `Run` production behavior untouched without a concrete need; GitNexus reports those paths as HIGH impact.
+
+## 2026-05-15 - tmux lifecycle helper coverage
+
+- Task selected: add tests for tmux session create-if-missing, session kill, and shell quoting behavior.
+- Why it was valuable: these low-risk helpers build tmux commands used by the agent runtime, and the tests pin down command ordering, validation errors, and quote escaping.
+- Files changed: `internal/tmux/session_test.go`, `internal/tmux/bootstrap_test.go`.
+- Tests run: `go test ./internal/tmux -run 'TestSessionCreateIfNotExists|TestSessionKill|TestShellQuote' -count=1 -v`, `go test ./internal/tmux -coverprofile $p -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect`.
+- Commit hash: `a34834a`.
+- Remaining follow-up: consider CLI registry validation tests next; avoid touching actual tmux command execution without a concrete runtime failure.
