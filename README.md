@@ -469,6 +469,7 @@ make test-dashboard   # bun test in packages/dashboard
 make test-landing     # astro check in packages/landing
 make test-local       # recommended stable local validation path
 make test-quick       # alias for test-local
+make doctor-local     # check local machine readiness for internal-board runs
 make test-all         # broad Go + dashboard tests + landing checks
 make ci               # lint + test-quick + binary/dashboard build + landing build
 make lint             # go vet ./...
@@ -483,6 +484,13 @@ long-running Windows-flaky packages (`internal/agent`, `internal/orchestrator`,
 tracker, workspace, TUI, web, and support packages. When touching a skipped
 package, run a focused package test such as `go test ./internal/orchestrator -run
 TestName -count=1`.
+
+For local operator readiness, run `make doctor-local` or
+`bun run doctor:local`. The doctor command parses `testdata/workflow.local.md`,
+checks git/repository state, internal-board configuration, writable temp and
+workspace paths, workflow fixtures, and required runtime tools. It reports
+dirty worktrees as warnings and exits non-zero only for blocking readiness
+failures.
 
 For a fuller pre-push or CI-style pass, use `make ci`. Use `make test-all`
 when you specifically want the broad Go suite and can tolerate the known

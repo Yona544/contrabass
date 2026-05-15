@@ -1,7 +1,7 @@
 # Contrabass — Build Tooling
 # Build order: dashboard SPA must build before Go binary (embed.FS requires dist/)
 
-.PHONY: build-dashboard build-landing build dev-dashboard dev-dashboard-stack dev-landing dev test test-race test-cover test-dashboard test-landing test-local-go test-local test-quick test-all ci clean lint release-dry
+.PHONY: build-dashboard build-landing build dev-dashboard dev-dashboard-stack dev-landing dev doctor-local test test-race test-cover test-dashboard test-landing test-local-go test-local test-quick test-all ci clean lint release-dry
 
 # Build the React dashboard SPA to packages/dashboard/dist/
 build-dashboard:
@@ -30,6 +30,10 @@ dev-landing:
 # Run Go binary in dev mode
 dev:
 	go run ./cmd/contrabass --port 8080
+
+# Check this machine is ready for local internal-board operation
+doctor-local:
+	go run ./cmd/contrabass doctor --config testdata/workflow.local.md
 
 # Run all Go tests
 test:

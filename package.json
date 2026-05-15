@@ -10,6 +10,7 @@
     "gitnexus:detect": "node scripts/gitnexus.mjs detect-changes",
     "gitnexus:doctor": "node scripts/gitnexus.mjs doctor",
     "gitnexus:status": "node scripts/gitnexus.mjs status",
+    "doctor:local": "go run ./cmd/contrabass doctor --config testdata/workflow.local.md",
     "test:local": "node scripts/local-verify.mjs",
     "test:local-go": "node scripts/local-verify.mjs --go-only",
     "test:local-verify": "node --test scripts/local-verify.test.mjs",
