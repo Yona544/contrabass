@@ -17,3 +17,12 @@
 - Tests run: targeted coverage reproductions for agent/orchestrator/team failures, `go test ./internal/team -count=1 -timeout=5m`, `go test ./internal/team -cover -count=1 -timeout=5m`, `go test ./... -cover -count=1 -timeout=20m`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect`.
 - Commit hash: `3b4b13b`.
 - Remaining follow-up: continue looking for low-risk coverage gaps; GitNexus detect was CRITICAL for this task because the shared team store write helper sits under team execution and recovery flows.
+
+## 2026-05-15 - hooks coverage and timing hardening
+
+- Task selected: add first-party tests for `internal/hooks` and harden two load-sensitive orchestrator waits plus the local dogfood smoke context.
+- Why it was valuable: `internal/hooks` had no tests despite running workflow shell commands; the broader suite also showed a few more existing timing assumptions under sustained package concurrency.
+- Files changed: `internal/hooks/hooks_test.go`, `cmd/contrabass/dogfood_smoke_test.go`, `internal/orchestrator/orchestrator_test.go`.
+- Tests run: `go test ./internal/hooks -count=1 -v`, `go test ./internal/hooks -count=1`, `go test ./internal/hooks -cover -count=1`, `go test ./cmd/contrabass -run TestLocalDogfoodSmokeBoardWorkspaceAndMockAgent -count=1`, `go test ./internal/orchestrator -run 'TestFailedAgentBackoff|TestOrchestrator_FollowUpTurnContinuation' -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect`.
+- Commit hash: `5e6a400`.
+- Remaining follow-up: use the latest coverage output to pick another low-risk package or exported behavior gap.
