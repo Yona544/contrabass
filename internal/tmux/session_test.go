@@ -106,6 +106,114 @@ func TestSessionCreate(t *testing.T) {
 	}
 }
 
+func TestSessionCreateIfNotExists(t *testing.T) {
+	testCases := []struct {
+		name      string
+		results   map[string]mockResult
+		wantCalls [][]string
+	}{
+		{
+			name: "returns when session is alive",
+			results: map[string]mockResult{
+				"tmux has-session -t contrabass-team": {},
+			},
+			wantCalls: [][]string{
+				{"has-session", "-t", "contrabass-team"},
+			},
+		},
+		{
+			name: "creates when session is absent",
+			results: map[string]mockResult{
+				"tmux has-session -t contrabass-team":    {err: errors.New("exit status 1")},
+				"tmux new-session -d -s contrabass-team": {},
+			},
+			wantCalls: [][]string{
+				{"has-session", "-t", "contrabass-team"},
+				{"has-session", "-t", "contrabass-team"},
+				{"new-session", "-d", "-s", "contrabass-team"},
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			runner := &MockRunner{results: testCase.results}
+			session := NewSession("team", runner)
+
+			require.NoError(t, session.CreateIfNotExists(context.Background()))
+			require.Len(t, runner.calls, len(testCase.wantCalls))
+			for i, want := range testCase.wantCalls {
+				assert.Equal(t, "tmux", runner.calls[i].name)
+				assert.Equal(t, want, runner.calls[i].args)
+			}
+		})
+	}
+}
+
+func TestSessionCreateIfNotExistsValidationErrors(t *testing.T) {
+	testCases := []struct {
+		name    string
+		session *Session
+		errLike string
+	}{
+		{
+			name:    "nil session",
+			session: nil,
+			errLike: "session is nil",
+		},
+		{
+			name:    "empty session name",
+			session: &Session{runner: &MockRunner{results: map[string]mockResult{}}},
+			errLike: "session name is empty",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			err := testCase.session.CreateIfNotExists(context.Background())
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), testCase.errLike)
+		})
+	}
+}
+
+func TestSessionKill(t *testing.T) {
+	runner := &MockRunner{results: map[string]mockResult{}}
+	session := NewSession("team", runner)
+
+	require.NoError(t, session.Kill(context.Background()))
+	require.Len(t, runner.calls, 1)
+	assert.Equal(t, "tmux", runner.calls[0].name)
+	assert.Equal(t, []string{"kill-session", "-t", "contrabass-team"}, runner.calls[0].args)
+}
+
+func TestSessionKillValidationErrors(t *testing.T) {
+	testCases := []struct {
+		name    string
+		session *Session
+		errLike string
+	}{
+		{
+			name:    "nil session",
+			session: nil,
+			errLike: "session is nil",
+		},
+		{
+			name:    "empty session name",
+			session: &Session{runner: &MockRunner{results: map[string]mockResult{}}},
+			errLike: "session name is empty",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			err := testCase.session.Kill(context.Background())
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), testCase.errLike)
+		})
+	}
+}
+
 func TestSessionListPanes(t *testing.T) {
 	runner := &MockRunner{
 		results: map[string]mockResult{
