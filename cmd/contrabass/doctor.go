@@ -267,11 +267,11 @@ func checkTrackerConfiguration(repoPath string, cfg *config.WorkflowConfig) []do
 		}
 		return append(diagnostics, checkWritablePath("tracker storage", boardDir)...)
 	case "linear":
-		if strings.TrimSpace(os.Getenv("LINEAR_API_KEY")) == "" {
+		if strings.TrimSpace(linearAPIKey(cfg)) == "" {
 			return []doctorDiagnostic{{
 				Severity: doctorFail,
 				Name:     "tracker configuration",
-				Detail:   "LINEAR_API_KEY is not set; set it or use tracker.type internal for local-only operation",
+				Detail:   "LINEAR_API_KEY or tracker.token is not set; set credentials or use tracker.type internal for local-only operation",
 			}}
 		}
 	case "github":

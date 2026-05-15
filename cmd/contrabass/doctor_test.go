@@ -194,6 +194,52 @@ Local operator workflow.
 	assert.Contains(t, buf.String(), "install opencode or update opencode.binary_path")
 }
 
+func TestDoctorCommandAllowsLinearTrackerTokenFallback(t *testing.T) {
+	t.Setenv("LINEAR_API_KEY", "")
+	cfgPath := writeRootWorkflowConfig(t, `---
+project_url: https://linear.app/acme/project/local
+tracker:
+  type: linear
+  token: fake-linear-key
+agent:
+  type: codex
+codex:
+  binary_path: codex app-server
+---
+Local operator workflow.
+`)
+
+	restoreDoctorTestHooks(t)
+	doctorLookPath = func(name string) (string, error) {
+		switch name {
+		case "git", "go", "node", "bun", "codex":
+			return name, nil
+		default:
+			return "", exec.ErrNotFound
+		}
+	}
+	doctorRunCommand = func(_ context.Context, _ string, name string, args ...string) (string, error) {
+		switch {
+		case name == "git" && strings.Join(args, " ") == "rev-parse --is-inside-work-tree":
+			return "true\n", nil
+		case name == "git" && strings.Join(args, " ") == "status --short":
+			return "", nil
+		default:
+			return "", nil
+		}
+	}
+
+	cmd := newRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"doctor", "--config", cfgPath, "--repo", filepath.Dir(cfgPath)})
+
+	require.NoError(t, cmd.Execute())
+	assert.Contains(t, buf.String(), "PASS tracker configuration")
+	assert.Contains(t, buf.String(), "linear tracker has required local configuration")
+}
+
 func TestDoctorCommandFindsBunUserInstallWhenBunIsNotOnPath(t *testing.T) {
 	t.Setenv("BUN_INSTALL", "")
 
