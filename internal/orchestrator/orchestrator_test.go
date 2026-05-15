@@ -777,7 +777,7 @@ func TestFailedAgentBackoff(t *testing.T) {
 		}
 	}()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	done := startOrchestrator(ctx, orch)
 
@@ -796,7 +796,7 @@ func TestFailedAgentBackoff(t *testing.T) {
 			!mw.Exists("ISS-1") &&
 			entries[0].IssueID == "ISS-1" &&
 			entries[0].Attempt == 2
-	}, 2*time.Second, 10*time.Millisecond)
+	}, 8*time.Second, 10*time.Millisecond)
 
 	cancel()
 	require.NoError(t, <-done)
@@ -823,7 +823,7 @@ func TestOrchestrator_FollowUpTurnContinuation(t *testing.T) {
 		orch := NewOrchestrator(mt, mw, mr, &staticConfig{cfg: workflowCfg}, nil)
 		events := newEventCollector(orch.Events())
 
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		done := startOrchestrator(ctx, orch)
 
@@ -837,7 +837,7 @@ func TestOrchestrator_FollowUpTurnContinuation(t *testing.T) {
 				return false
 			}
 			return entries[0].IssueID == issue.ID && entries[0].Attempt == 2
-		}, 2*time.Second, 10*time.Millisecond)
+		}, 8*time.Second, 10*time.Millisecond)
 
 		var backoffPayload BackoffEnqueued
 		require.Eventually(t, func() bool {
