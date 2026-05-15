@@ -59,6 +59,7 @@ func TestLocalDogfoodSmokeBoardWorkspaceAndMockAgent(t *testing.T) {
 	require.NoError(t, err)
 	assert.DirExists(t, workspacePath)
 	assert.Equal(t, filepath.Join(repoDir, "workspaces", created.ID), workspacePath)
+	assert.Equal(t, created.ID, dogfoodGit(t, workspacePath, "branch", "--show-current"))
 
 	process, err := mockAgent.Start(ctx, fetched[0], workspacePath, "Fix issue: "+created.Title)
 	require.NoError(t, err)
@@ -69,6 +70,10 @@ func TestLocalDogfoodSmokeBoardWorkspaceAndMockAgent(t *testing.T) {
 	}
 	require.NoError(t, <-process.Done)
 	assert.Equal(t, []string{"session/started", "turn/completed"}, eventTypes)
+
+	require.NoError(t, os.WriteFile(filepath.Join(workspacePath, "agent-output.txt"), []byte("local smoke output\n"), 0o644))
+	dogfoodGit(t, workspacePath, "add", "agent-output.txt")
+	dogfoodGit(t, workspacePath, "commit", "-m", "agent progress")
 
 	require.NoError(t, localTracker.UpdateIssueState(ctx, created.ID, types.Released))
 	require.NoError(t, workspaceManager.Cleanup(ctx, created.ID))
@@ -82,6 +87,7 @@ func TestLocalDogfoodSmokeBoardWorkspaceAndMockAgent(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, openIssues)
 	assert.NoDirExists(t, workspacePath)
+	assert.NotContains(t, dogfoodGit(t, repoDir, "worktree", "list", "--porcelain"), workspacePath)
 	assert.Empty(t, dogfoodGit(t, repoDir, "status", "--short"))
 }
 
