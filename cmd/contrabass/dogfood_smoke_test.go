@@ -55,6 +55,18 @@ func TestLocalDogfoodSmokeBoardWorkspaceAndMockAgent(t *testing.T) {
 	assert.Equal(t, tracker.LocalBoardStateInProgress, claimed.State)
 	assert.Equal(t, "operator", claimed.ClaimedBy)
 
+	require.NoError(t, localTracker.ReleaseIssue(ctx, created.ID))
+	released, err := localTracker.GetIssue(ctx, created.ID)
+	require.NoError(t, err)
+	assert.Equal(t, tracker.LocalBoardStateInProgress, released.State)
+	assert.Empty(t, released.ClaimedBy)
+
+	require.NoError(t, localTracker.ClaimIssue(ctx, created.ID))
+	reclaimed, err := localTracker.GetIssue(ctx, created.ID)
+	require.NoError(t, err)
+	assert.Equal(t, tracker.LocalBoardStateInProgress, reclaimed.State)
+	assert.Equal(t, "operator", reclaimed.ClaimedBy)
+
 	workspacePath, err := workspaceManager.Create(ctx, fetched[0])
 	require.NoError(t, err)
 	assert.DirExists(t, workspacePath)
