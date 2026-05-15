@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 	"text/tabwriter"
 
@@ -80,6 +81,8 @@ type boardDispatchOptions struct {
 }
 
 var runBoardDispatchTeam = runTeamWithOptions
+
+var boardIssueIDPattern = regexp.MustCompile(`^[A-Za-z0-9]+-[1-9][0-9]*$`)
 
 func init() {
 	for _, command := range []*cobra.Command{
@@ -193,11 +196,6 @@ func runBoardList(cmd *cobra.Command, _ []string) error {
 }
 
 func runBoardCreate(cmd *cobra.Command, _ []string) error {
-	localTracker, err := loadLocalBoardTracker(cmd, true)
-	if err != nil {
-		return err
-	}
-
 	title, err := cmd.Flags().GetString("title")
 	if err != nil {
 		return fmt.Errorf("getting title flag: %w", err)
@@ -228,6 +226,22 @@ func runBoardCreate(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("getting blocked-by flag: %w", err)
 	}
 
+	if strings.TrimSpace(parentID) != "" {
+		if err := validateBoardIssueID(parentID); err != nil {
+			return err
+		}
+	}
+	for _, issueID := range blockedBy {
+		if err := validateBoardIssueID(issueID); err != nil {
+			return err
+		}
+	}
+
+	localTracker, err := loadLocalBoardTracker(cmd, true)
+	if err != nil {
+		return err
+	}
+
 	issue, err := localTracker.CreateIssueWithOptions(context.Background(), tracker.LocalIssueCreateOptions{
 		Title:       title,
 		Description: description,
@@ -245,6 +259,10 @@ func runBoardCreate(cmd *cobra.Command, _ []string) error {
 }
 
 func runBoardShow(cmd *cobra.Command, args []string) error {
+	if err := validateBoardIssueID(args[0]); err != nil {
+		return err
+	}
+
 	localTracker, err := loadLocalBoardTracker(cmd, false)
 	if err != nil {
 		return err
@@ -305,6 +323,10 @@ func runBoardShow(cmd *cobra.Command, args []string) error {
 }
 
 func runBoardMove(cmd *cobra.Command, args []string) error {
+	if err := validateBoardIssueID(args[0]); err != nil {
+		return err
+	}
+
 	localTracker, err := loadLocalBoardTracker(cmd, false)
 	if err != nil {
 		return err
@@ -325,6 +347,10 @@ func runBoardMove(cmd *cobra.Command, args []string) error {
 }
 
 func runBoardComment(cmd *cobra.Command, args []string) error {
+	if err := validateBoardIssueID(args[0]); err != nil {
+		return err
+	}
+
 	localTracker, err := loadLocalBoardTracker(cmd, false)
 	if err != nil {
 		return err
@@ -344,6 +370,10 @@ func runBoardComment(cmd *cobra.Command, args []string) error {
 }
 
 func runBoardAssign(cmd *cobra.Command, args []string) error {
+	if err := validateBoardIssueID(args[0]); err != nil {
+		return err
+	}
+
 	localTracker, err := loadLocalBoardTracker(cmd, false)
 	if err != nil {
 		return err
@@ -355,6 +385,13 @@ func runBoardAssign(cmd *cobra.Command, args []string) error {
 	}
 
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s -> %s\n", issue.ID, issue.Assignee)
+	return nil
+}
+
+func validateBoardIssueID(issueID string) error {
+	if !boardIssueIDPattern.MatchString(strings.TrimSpace(issueID)) || strings.TrimSpace(issueID) != issueID {
+		return fmt.Errorf("invalid local board issue ID %q: expected PREFIX-NUMBER (for example CB-1)", issueID)
+	}
 	return nil
 }
 
