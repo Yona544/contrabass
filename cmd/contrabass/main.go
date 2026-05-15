@@ -201,7 +201,7 @@ func run(cfgPath string, noTUI bool, logFile, logLevel string, dryRun bool, port
 	case "linear":
 		assigneeID := trackerAssigneeID(cfg)
 		linearClient, linearErr := tracker.NewLinearClient(tracker.LinearConfig{
-			APIKey:      os.Getenv("LINEAR_API_KEY"),
+			APIKey:      linearAPIKey(cfg),
 			ProjectSlug: projectSlug(cfg),
 			AssigneeID:  assigneeID,
 		})
@@ -555,6 +555,17 @@ func projectSlug(cfg *config.WorkflowConfig) string {
 		return parts[len(parts)-1]
 	}
 	return ""
+}
+
+// linearAPIKey extracts the Linear API key from env with config fallback.
+func linearAPIKey(cfg *config.WorkflowConfig) string {
+	if envKey := os.Getenv("LINEAR_API_KEY"); envKey != "" {
+		return envKey
+	}
+	if cfg == nil {
+		return ""
+	}
+	return cfg.Tracker.Token
 }
 
 // trackerAssigneeID extracts assignee from config with env fallback.

@@ -42,7 +42,7 @@ Today Contrabass ships with:
   - `omx` ([oh-my-codex](https://github.com/Yeachan-Heo/oh-my-codex) team runtime)
   - `omc` ([oh-my-claudecode](https://github.com/Yeachan-Heo/oh-my-claudecode) team runtime)
 - Tracker credentials for the backend you use:
-  - Linear: `LINEAR_API_KEY`
+  - Linear: `LINEAR_API_KEY` or `tracker.token`
   - GitHub: `GITHUB_TOKEN`
 
 From a fresh clone, run `bun install` once before using the JS/landing build and test commands.
@@ -358,6 +358,8 @@ team:
 
 - **Linear**
   - GraphQL-based issue fetch, claim, release, state update, and comment posting
+  - Reads the API key from `LINEAR_API_KEY`, falling back to `tracker.token`
+    when provided in the workflow config
   - Can auto-resolve the assignee from the API token when `tracker.assignee_id` is omitted
 - **GitHub Issues**
   - REST-based issue fetch, assign/unassign, comment, and close-on-release behavior

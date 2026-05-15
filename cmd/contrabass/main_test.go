@@ -343,6 +343,44 @@ func TestProjectSlug(t *testing.T) {
 	}
 }
 
+func TestLinearAPIKey(t *testing.T) {
+	tests := []struct {
+		name   string
+		envKey string
+		cfg    *config.WorkflowConfig
+		want   string
+	}{
+		{
+			name:   "env override takes precedence",
+			envKey: "env-key",
+			cfg:    &config.WorkflowConfig{Tracker: config.TrackerConfig{Token: "config-key"}},
+			want:   "env-key",
+		},
+		{
+			name: "tracker token fallback",
+			cfg:  &config.WorkflowConfig{Tracker: config.TrackerConfig{Token: "config-key"}},
+			want: "config-key",
+		},
+		{
+			name: "empty config returns empty",
+			cfg:  &config.WorkflowConfig{},
+			want: "",
+		},
+		{
+			name: "nil config returns empty",
+			cfg:  nil,
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("LINEAR_API_KEY", tt.envKey)
+			assert.Equal(t, tt.want, linearAPIKey(tt.cfg))
+		})
+	}
+}
+
 // --- Tests for run ---
 
 func TestRun_ConfigParseError(t *testing.T) {
