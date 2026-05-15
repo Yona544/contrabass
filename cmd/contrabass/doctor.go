@@ -123,7 +123,11 @@ func runDoctorChecks(ctx context.Context, opts doctorOptions) []doctorDiagnostic
 	}
 
 	diagnostics = append(diagnostics, checkGitRepository(ctx, repoPath, gitErr == nil)...)
-	cfg, cfgOK, configDiagnostics := checkWorkflowConfig(opts.ConfigPath)
+	configPath := opts.ConfigPath
+	if !filepath.IsAbs(configPath) {
+		configPath = doctorResolvePath(repoPath, configPath)
+	}
+	cfg, cfgOK, configDiagnostics := checkWorkflowConfig(configPath)
 	diagnostics = append(diagnostics, configDiagnostics...)
 	diagnostics = append(diagnostics, checkWorkflowFixtures(repoPath)...)
 
@@ -221,6 +225,7 @@ func checkWorkflowFixtures(repoPath string) []doctorDiagnostic {
 	fixtures := []string{
 		filepath.Join(repoPath, "testdata", "workflow.demo.md"),
 		filepath.Join(repoPath, "testdata", "workflow.github.md"),
+		filepath.Join(repoPath, "testdata", "workflow.local.md"),
 	}
 
 	missing := []string{}

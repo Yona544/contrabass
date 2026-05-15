@@ -101,6 +101,52 @@ func TestDoctorCommandFailsForMissingConfig(t *testing.T) {
 	assert.Contains(t, buf.String(), "cannot read")
 }
 
+func TestDoctorCommandResolvesRelativeConfigFromRepoFlag(t *testing.T) {
+	repoDir := t.TempDir()
+	cfgPath := filepath.Join(repoDir, "WORKFLOW.md")
+	require.NoError(t, os.WriteFile(cfgPath, []byte(`---
+tracker:
+  type: internal
+agent:
+  type: codex
+codex:
+  binary_path: codex app-server
+---
+Local operator workflow.
+`), 0o644))
+	t.Chdir(t.TempDir())
+
+	restoreDoctorTestHooks(t)
+	doctorLookPath = func(name string) (string, error) {
+		switch name {
+		case "git", "go", "node", "bun", "codex":
+			return name, nil
+		default:
+			return "", exec.ErrNotFound
+		}
+	}
+	doctorRunCommand = func(_ context.Context, _ string, name string, args ...string) (string, error) {
+		switch {
+		case name == "git" && strings.Join(args, " ") == "rev-parse --is-inside-work-tree":
+			return "true\n", nil
+		case name == "git" && strings.Join(args, " ") == "status --short":
+			return "", nil
+		default:
+			return "", nil
+		}
+	}
+
+	cmd := newRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"doctor", "--config", "WORKFLOW.md", "--repo", repoDir})
+
+	require.NoError(t, cmd.Execute())
+	assert.Contains(t, buf.String(), "PASS workflow config")
+	assert.Contains(t, buf.String(), cfgPath)
+}
+
 func TestDoctorCommandFailsWhenAgentRuntimeMissing(t *testing.T) {
 	cfgPath := writeRootWorkflowConfig(t, `---
 model: openai/gpt-5-codex
@@ -285,4 +331,18 @@ Prompt.
 	_, statErr := os.Stat(boardDir)
 	assert.True(t, errors.Is(statErr, os.ErrNotExist), "doctor should not initialize the board")
 	assert.Contains(t, buf.String(), "will be created on first board use")
+}
+
+func TestCheckWorkflowFixturesIncludesLocalWorkflow(t *testing.T) {
+	repoDir := t.TempDir()
+	testdataDir := filepath.Join(repoDir, "testdata")
+	require.NoError(t, os.MkdirAll(testdataDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(testdataDir, "workflow.demo.md"), []byte("demo"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(testdataDir, "workflow.github.md"), []byte("github"), 0o644))
+
+	diagnostics := checkWorkflowFixtures(repoDir)
+
+	require.Len(t, diagnostics, 1)
+	assert.Equal(t, doctorWarn, diagnostics[0].Severity)
+	assert.Contains(t, diagnostics[0].Detail, "workflow.local.md")
 }
