@@ -26,3 +26,12 @@
 - Tests run: `go test ./internal/hooks -count=1 -v`, `go test ./internal/hooks -count=1`, `go test ./internal/hooks -cover -count=1`, `go test ./cmd/contrabass -run TestLocalDogfoodSmokeBoardWorkspaceAndMockAgent -count=1`, `go test ./internal/orchestrator -run 'TestFailedAgentBackoff|TestOrchestrator_FollowUpTurnContinuation' -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect`.
 - Commit hash: `5e6a400`.
 - Remaining follow-up: use the latest coverage output to pick another low-risk package or exported behavior gap.
+
+## 2026-05-15 - run phase label coverage
+
+- Task selected: add a table-driven test for `RunPhase.Label`.
+- Why it was valuable: dashboard-facing phase labels were implemented but not directly covered, leaving enum grouping behavior easy to regress.
+- Files changed: `internal/types/types_test.go`.
+- Tests run: `go test ./internal/types -run TestRunPhaseLabel -count=1 -v`, `go test ./internal/types -cover -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect`.
+- Commit hash: `a158f97`.
+- Remaining follow-up: inspect another low-risk package with untested exported behavior before moving to higher-risk reliability code.
