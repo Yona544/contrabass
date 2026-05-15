@@ -62,3 +62,12 @@
 - Tests run: `go test ./internal/tmux -run 'TestSessionCreateIfNotExists|TestSessionKill|TestShellQuote' -count=1 -v`, `go test ./internal/tmux -coverprofile $p -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect`.
 - Commit hash: `a34834a`.
 - Remaining follow-up: consider CLI registry validation tests next; avoid touching actual tmux command execution without a concrete runtime failure.
+
+## 2026-05-15 - tmux CLI registry validation coverage
+
+- Task selected: add tests for CLI registry validation, prompt-mode checks, nil/empty list handling, and `mustRegister` panic behavior.
+- Why it was valuable: registry validation protects tmux-backed agent launcher configuration, and this completed coverage of the branchy validation helpers without changing runtime code.
+- Files changed: `internal/tmux/cli_registry_test.go`.
+- Tests run: `go test ./internal/tmux -run 'TestCLIRegistry_RegisterValidationErrors|TestCLIRegistry_RegisterTrimsAgentType|TestCLIRegistry_ListEmptyForNilOrEmptyRegistry|TestMustRegisterPanicsOnInvalidConfig|TestIsValidPromptMode' -count=1 -v`, `go test ./internal/tmux -coverprofile $p -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect`.
+- Commit hash: `eacbcd2`.
+- Remaining follow-up: move to broader packages only with focused targets; remaining tmux gaps are mostly command-execution and lifecycle integration paths.
