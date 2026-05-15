@@ -67,6 +67,38 @@ func TestBoardCommandLifecycle(t *testing.T) {
 	assert.Contains(t, showOutput, "Looks good")
 }
 
+func TestBoardCreateFlagsDoNotLeakAcrossRootCommands(t *testing.T) {
+	firstBoardDir := filepath.Join(t.TempDir(), "first-board")
+	first := newRootCmd()
+	firstBuf := new(bytes.Buffer)
+	first.SetOut(firstBuf)
+	first.SetErr(firstBuf)
+	first.SetArgs([]string{
+		"board", "create",
+		"--dir", firstBoardDir,
+		"--title", "Invalid parent",
+		"--parent", "../manifest",
+	})
+
+	err := first.Execute()
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "invalid local board issue ID")
+
+	secondBoardDir := filepath.Join(t.TempDir(), "second-board")
+	second := newRootCmd()
+	secondBuf := new(bytes.Buffer)
+	second.SetOut(secondBuf)
+	second.SetErr(secondBuf)
+	second.SetArgs([]string{
+		"board", "create",
+		"--dir", secondBoardDir,
+		"--title", "Fresh create",
+	})
+
+	require.NoError(t, second.Execute())
+	assert.Equal(t, "CB-1", strings.TrimSpace(secondBuf.String()))
+}
+
 func TestBoardCommandRejectsUnsafeIssueIDsBeforeOpeningBoard(t *testing.T) {
 	tests := []struct {
 		name string

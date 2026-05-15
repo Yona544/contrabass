@@ -15,64 +15,6 @@ import (
 	"github.com/junhoyeo/contrabass/internal/tracker"
 )
 
-var boardCmd = &cobra.Command{
-	Use:   "board",
-	Short: "Manage the internal .contrabass issue board",
-	Long:  "Manage the internal .contrabass issue board for tracker.type=internal workflows",
-}
-
-var boardInitCmd = &cobra.Command{
-	Use:   "init",
-	Short: "Initialize the internal board storage",
-	RunE:  runBoardInit,
-}
-
-var boardListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List internal board issues",
-	RunE:  runBoardList,
-}
-
-var boardCreateCmd = &cobra.Command{
-	Use:   "create",
-	Short: "Create an internal board issue",
-	RunE:  runBoardCreate,
-}
-
-var boardShowCmd = &cobra.Command{
-	Use:   "show <issue-id>",
-	Short: "Show an internal board issue",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runBoardShow,
-}
-
-var boardMoveCmd = &cobra.Command{
-	Use:   "move <issue-id> <state>",
-	Short: "Move an internal board issue to a new state",
-	Args:  cobra.ExactArgs(2),
-	RunE:  runBoardMove,
-}
-
-var boardCommentCmd = &cobra.Command{
-	Use:   "comment <issue-id>",
-	Short: "Add a comment to an internal board issue",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runBoardComment,
-}
-
-var boardAssignCmd = &cobra.Command{
-	Use:   "assign <issue-id> <assignee>",
-	Short: "Assign an internal board issue",
-	Args:  cobra.ExactArgs(2),
-	RunE:  runBoardAssign,
-}
-
-var boardDispatchCmd = &cobra.Command{
-	Use:   "dispatch",
-	Short: "Dispatch the next runnable internal board issue into a team run",
-	RunE:  runBoardDispatch,
-}
-
 type boardDispatchOptions struct {
 	ConfigPath string
 	TeamName   string
@@ -84,7 +26,65 @@ var runBoardDispatchTeam = runTeamWithOptions
 
 var boardIssueIDPattern = regexp.MustCompile(`^[A-Za-z0-9]+-[1-9][0-9]*$`)
 
-func init() {
+func newBoardCmd() *cobra.Command {
+	boardCmd := &cobra.Command{
+		Use:   "board",
+		Short: "Manage the internal .contrabass issue board",
+		Long:  "Manage the internal .contrabass issue board for tracker.type=internal workflows",
+	}
+
+	boardInitCmd := &cobra.Command{
+		Use:   "init",
+		Short: "Initialize the internal board storage",
+		RunE:  runBoardInit,
+	}
+
+	boardListCmd := &cobra.Command{
+		Use:   "list",
+		Short: "List internal board issues",
+		RunE:  runBoardList,
+	}
+
+	boardCreateCmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create an internal board issue",
+		RunE:  runBoardCreate,
+	}
+
+	boardShowCmd := &cobra.Command{
+		Use:   "show <issue-id>",
+		Short: "Show an internal board issue",
+		Args:  cobra.ExactArgs(1),
+		RunE:  runBoardShow,
+	}
+
+	boardMoveCmd := &cobra.Command{
+		Use:   "move <issue-id> <state>",
+		Short: "Move an internal board issue to a new state",
+		Args:  cobra.ExactArgs(2),
+		RunE:  runBoardMove,
+	}
+
+	boardCommentCmd := &cobra.Command{
+		Use:   "comment <issue-id>",
+		Short: "Add a comment to an internal board issue",
+		Args:  cobra.ExactArgs(1),
+		RunE:  runBoardComment,
+	}
+
+	boardAssignCmd := &cobra.Command{
+		Use:   "assign <issue-id> <assignee>",
+		Short: "Assign an internal board issue",
+		Args:  cobra.ExactArgs(2),
+		RunE:  runBoardAssign,
+	}
+
+	boardDispatchCmd := &cobra.Command{
+		Use:   "dispatch",
+		Short: "Dispatch the next runnable internal board issue into a team run",
+		RunE:  runBoardDispatch,
+	}
+
 	for _, command := range []*cobra.Command{
 		boardInitCmd,
 		boardListCmd,
@@ -128,6 +128,8 @@ func init() {
 		boardAssignCmd,
 		boardDispatchCmd,
 	)
+
+	return boardCmd
 }
 
 func runBoardInit(cmd *cobra.Command, _ []string) error {
