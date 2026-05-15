@@ -35,3 +35,12 @@
 - Tests run: `go test ./internal/types -run TestRunPhaseLabel -count=1 -v`, `go test ./internal/types -cover -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect`.
 - Commit hash: `a158f97`.
 - Remaining follow-up: inspect another low-risk package with untested exported behavior before moving to higher-risk reliability code.
+
+## 2026-05-15 - cached update state coverage
+
+- Task selected: add tests for update-check state persistence and cached latest-version behavior.
+- Why it was valuable: `internal/update` had no direct coverage for `readState`, `writeState`, or the cached `Check` path even though those helpers influence CLI startup and team-worker update checks.
+- Files changed: `internal/update/update_test.go`.
+- Tests run: `go test ./internal/update -run 'TestCheckUsesFreshCachedLatest|TestCheckFetchesAndPersistsLatest|TestStateReadWrite|TestReadStateMissingOrInvalid' -count=1 -v`, `go test ./internal/update -coverprofile=$coverPath -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect`.
+- Commit hash: `d4b0eea`.
+- Remaining follow-up: avoid production edits in `internal/update` without a stronger reason; GitNexus reports `readState` as HIGH impact because CLI and team-worker flows depend on it.
