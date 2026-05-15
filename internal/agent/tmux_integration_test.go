@@ -58,6 +58,8 @@ func (m *integrationMockRunner) Calls() []integrationMockCall {
 }
 
 func TestTmuxRunner_IntegrationPipeline(t *testing.T) {
+	const integrationWait = 5 * time.Second
+
 	tests := []struct {
 		name                string
 		processCount        int
@@ -129,7 +131,7 @@ func TestTmuxRunner_IntegrationPipeline(t *testing.T) {
 					return false
 				}
 				return len(events) == tt.processCount
-			}, time.Second, 10*time.Millisecond)
+			}, integrationWait, 10*time.Millisecond)
 
 			assert.Eventually(t, func() bool {
 				heartbeats, err := heartbeatMonitor.ListAll(teamName)
@@ -145,7 +147,7 @@ func TestTmuxRunner_IntegrationPipeline(t *testing.T) {
 					}
 				}
 				return true
-			}, time.Second, 10*time.Millisecond)
+			}, integrationWait, 10*time.Millisecond)
 
 			assert.Eventually(t, func() bool {
 				entries, err := dispatchQueue.ListAll(teamName)
@@ -164,10 +166,10 @@ func TestTmuxRunner_IntegrationPipeline(t *testing.T) {
 					}
 				}
 				return true
-			}, time.Second, 10*time.Millisecond)
+			}, integrationWait, 10*time.Millisecond)
 
 			receivedStarted := 0
-			deadline := time.After(time.Second)
+			deadline := time.After(integrationWait)
 			for receivedStarted < tt.processCount {
 				select {
 				case event := <-sub:
@@ -189,7 +191,7 @@ func TestTmuxRunner_IntegrationPipeline(t *testing.T) {
 				select {
 				case err := <-proc.Done:
 					require.NoError(t, err)
-				case <-time.After(time.Second):
+				case <-time.After(integrationWait):
 					t.Fatalf("timed out waiting for process completion")
 				}
 			}

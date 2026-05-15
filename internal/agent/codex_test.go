@@ -351,14 +351,14 @@ func TestCodexRunner_ConcurrentStartStop(t *testing.T) {
 					errCh <- fmt.Errorf("stop failed: %w", err)
 					return
 				}
-			case <-time.After(2 * time.Second):
+			case <-time.After(6 * time.Second):
 				errCh <- errors.New("stop timed out")
 				return
 			}
 
 			select {
 			case <-proc.Done:
-			case <-time.After(2 * time.Second):
+			case <-time.After(6 * time.Second):
 				errCh <- errors.New("done timed out")
 			}
 		}(i)

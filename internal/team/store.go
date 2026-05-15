@@ -2,9 +2,11 @@ package team
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -75,11 +77,36 @@ func (s *Store) writeJSONBytesNoLock(path string, data []byte) error {
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		return fmt.Errorf("write temp file %s: %w", tmp, err)
 	}
-	if err := os.Rename(tmp, path); err != nil {
+	if err := renameWithRetry(tmp, path); err != nil {
 		os.Remove(tmp) // best-effort cleanup
 		return fmt.Errorf("rename %s to %s: %w", tmp, path, err)
 	}
 	return nil
+}
+
+func renameWithRetry(oldPath, newPath string) error {
+	err := os.Rename(oldPath, newPath)
+	if err == nil || !isTransientRenameError(err) {
+		return err
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	delay := 10 * time.Millisecond
+	for time.Now().Before(deadline) {
+		time.Sleep(delay)
+		err = os.Rename(oldPath, newPath)
+		if err == nil || !isTransientRenameError(err) {
+			return err
+		}
+		if delay < 100*time.Millisecond {
+			delay *= 2
+		}
+	}
+	return err
+}
+
+func isTransientRenameError(err error) bool {
+	return runtime.GOOS == "windows" && errors.Is(err, os.ErrPermission)
 }
 
 // ReadJSON reads and unmarshals JSON from the given path.

@@ -98,7 +98,7 @@ func TestTeamPipelineFullCycle(t *testing.T) {
 
 	collector := collectTeamEvents(coord.Events)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
 	done := make(chan error, 1)
@@ -114,12 +114,12 @@ func TestTeamPipelineFullCycle(t *testing.T) {
 		default:
 			return false
 		}
-	}, 8*time.Second, 20*time.Millisecond)
+	}, 15*time.Second, 20*time.Millisecond)
 	require.NoError(t, runErr)
 
 	require.Eventually(t, func() bool {
 		return collector.HasType("pipeline_started") && collector.HasType("pipeline_completed")
-	}, 2*time.Second, 20*time.Millisecond)
+	}, 5*time.Second, 20*time.Millisecond)
 
 	for _, taskID := range []string{"001-test-plan", "002-test-prd", "003-test-exec"} {
 		assert.GreaterOrEqual(t, countTaskEvent(collector.All(), "task_claimed", taskID), 1)

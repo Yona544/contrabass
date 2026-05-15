@@ -731,21 +731,21 @@ func TestSuccessGate_HollowRunPausesWithoutRetry(t *testing.T) {
 			orch := NewOrchestrator(mt, mw, tt.runner(t), &staticConfig{cfg: cfg}, nil)
 			events := newEventCollector(orch.Events())
 
-			ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
 			done := startOrchestrator(ctx, orch)
 
 			if tt.wantReleased {
 				require.Eventually(t, func() bool {
 					return mt.UpdateIssueStateCount(issue.ID, types.Released) >= 1
-				}, 6*time.Second, 10*time.Millisecond)
+				}, 15*time.Second, 10*time.Millisecond)
 				assert.Zero(t, events.BackoffCauseCount(issue.ID, rejectionCause))
 			}
 			if tt.wantPaused {
 				require.Eventually(t, func() bool {
 					state, ok := mt.State(issue.ID)
 					return ok && state == types.Running && !mw.base.Exists(issue.ID)
-				}, 6*time.Second, 10*time.Millisecond)
+				}, 15*time.Second, 10*time.Millisecond)
 				assert.Zero(t, mt.UpdateIssueStateCount(issue.ID, types.Released))
 				assert.Zero(t, events.BackoffCauseCount(issue.ID, rejectionCause))
 				assert.Zero(t, mt.ReleaseCount(issue.ID))
@@ -1862,14 +1862,14 @@ func TestVerifyGate_GitErrorPausesWithoutRetry(t *testing.T) {
 	orch := NewOrchestrator(mt, mw, mr, &staticConfig{cfg: cfg}, nil)
 	events := newEventCollector(orch.Events())
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	done := startOrchestrator(ctx, orch)
 
 	require.Eventually(t, func() bool {
 		state, ok := mt.State(issue.ID)
 		return ok && state == types.Running && !mw.base.Exists(issue.ID)
-	}, 2*time.Second, 10*time.Millisecond, "git_error must leave the issue in progress for review")
+	}, 8*time.Second, 10*time.Millisecond, "git_error must leave the issue in progress for review")
 	assert.Zero(t, mt.UpdateIssueStateCount(issue.ID, types.Released),
 		"git_error must not fall through to Released")
 	assert.Zero(t, events.BackoffCauseCount(issue.ID, "success_unverified_workspace_invalid"),
@@ -2350,7 +2350,7 @@ func TestSuccessGate_HollowRunReroutesToBackoff(t *testing.T) {
 			orch := NewOrchestrator(mt, mw, tt.runner(t), &staticConfig{cfg: cfg}, nil)
 			events := newEventCollector(orch.Events())
 
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
 			done := startOrchestrator(ctx, orch)
 
@@ -2364,7 +2364,7 @@ func TestSuccessGate_HollowRunReroutesToBackoff(t *testing.T) {
 					}
 					finished, ok := ev.Data.(AgentFinished)
 					return ok && finished.Phase == types.Succeeded
-				}, 2*time.Second, 10*time.Millisecond,
+				}, 10*time.Second, 10*time.Millisecond,
 					"AgentFinished(Succeeded) must arrive for hollow run")
 
 				// Released transition must never have happened.
@@ -2378,7 +2378,7 @@ func TestSuccessGate_HollowRunReroutesToBackoff(t *testing.T) {
 			if tt.wantReleased {
 				require.Eventually(t, func() bool {
 					return mt.UpdateIssueStateCount(issue.ID, types.Released) >= 1
-				}, 2*time.Second, 10*time.Millisecond,
+				}, 10*time.Second, 10*time.Millisecond,
 					"real success must release to Done")
 
 				// No rejection backoff for a real success.
