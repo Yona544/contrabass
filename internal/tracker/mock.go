@@ -45,6 +45,11 @@ func (m *MockTracker) FetchIssues(_ context.Context) ([]types.Issue, error) {
 	}
 	result := make([]types.Issue, len(m.Issues))
 	copy(result, m.Issues)
+	for i := range result {
+		if state, ok := m.States[result[i].ID]; ok {
+			result[i].State = state
+		}
+	}
 	return result, nil
 }
 
