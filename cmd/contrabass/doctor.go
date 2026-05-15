@@ -134,7 +134,7 @@ func runDoctorChecks(ctx context.Context, opts doctorOptions) []doctorDiagnostic
 	if cfgOK {
 		diagnostics = append(diagnostics, checkTrackerConfiguration(repoPath, cfg)...)
 		diagnostics = append(diagnostics, checkWritablePath("workspace path", doctorResolvePath(repoPath, filepath.Join(cfg.WorkspaceBaseDir(), "workspaces")))...)
-		diagnostics = append(diagnostics, checkRuntimeTools(cfg)...)
+		diagnostics = append(diagnostics, checkRuntimeTools(ctx, cfg)...)
 	}
 	diagnostics = append(diagnostics, checkWritablePath("temp directory", os.TempDir())...)
 
@@ -297,7 +297,7 @@ func checkTrackerConfiguration(repoPath string, cfg *config.WorkflowConfig) []do
 	}}
 }
 
-func checkRuntimeTools(cfg *config.WorkflowConfig) []doctorDiagnostic {
+func checkRuntimeTools(ctx context.Context, cfg *config.WorkflowConfig) []doctorDiagnostic {
 	required := []runtimeTool{
 		{name: "go", action: "install Go 1.25+ and ensure go is on PATH"},
 		{name: "node", action: "install Node.js or ensure node is on PATH"},
@@ -331,13 +331,42 @@ func checkRuntimeTools(cfg *config.WorkflowConfig) []doctorDiagnostic {
 			})
 			continue
 		}
-		diagnostics = append(diagnostics, doctorDiagnostic{
+		diagnostic := doctorDiagnostic{
 			Severity: doctorPass,
 			Name:     "runtime tool " + tool.name,
 			Detail:   fmt.Sprintf("found at %s", path),
-		})
+		}
+		if versionArgs, ok := runtimeToolVersionArgs(tool.name); ok {
+			output, versionErr := doctorRunCommand(ctx, "", path, versionArgs...)
+			version := compactDoctorOutput(output)
+			if versionErr != nil {
+				diagnostic.Severity = doctorWarn
+				diagnostic.Detail = fmt.Sprintf("found at %s, but could not inspect version with %s %s: %v", path, tool.name, strings.Join(versionArgs, " "), versionErr)
+				if version != "" {
+					diagnostic.Detail += fmt.Sprintf(" (%s)", version)
+				}
+			} else if version != "" {
+				diagnostic.Detail = fmt.Sprintf("found at %s (%s)", path, version)
+			}
+		}
+		diagnostics = append(diagnostics, diagnostic)
 	}
 	return diagnostics
+}
+
+func runtimeToolVersionArgs(name string) ([]string, bool) {
+	switch name {
+	case "go":
+		return []string{"version"}, true
+	case "node", "bun":
+		return []string{"--version"}, true
+	default:
+		return nil, false
+	}
+}
+
+func compactDoctorOutput(output string) string {
+	return strings.Join(strings.Fields(strings.TrimSpace(output)), " ")
 }
 
 func findRuntimeTool(name string) (string, error) {

@@ -240,6 +240,100 @@ Local operator workflow.
 	assert.Contains(t, buf.String(), "linear tracker has required local configuration")
 }
 
+func TestDoctorCommandReportsRuntimeToolVersions(t *testing.T) {
+	cfgPath := writeRootWorkflowConfig(t, `---
+tracker:
+  type: internal
+---
+Local operator workflow.
+`)
+
+	restoreDoctorTestHooks(t)
+	doctorLookPath = func(name string) (string, error) {
+		switch name {
+		case "git", "go", "node", "bun", "codex":
+			return name, nil
+		default:
+			return "", exec.ErrNotFound
+		}
+	}
+	doctorRunCommand = func(_ context.Context, _ string, name string, args ...string) (string, error) {
+		switch {
+		case name == "git" && strings.Join(args, " ") == "rev-parse --is-inside-work-tree":
+			return "true\n", nil
+		case name == "git" && strings.Join(args, " ") == "status --short":
+			return "", nil
+		case name == "go" && strings.Join(args, " ") == "version":
+			return "go version go1.25.0 windows/amd64\n", nil
+		case name == "node" && strings.Join(args, " ") == "--version":
+			return "v24.0.0\n", nil
+		case name == "bun" && strings.Join(args, " ") == "--version":
+			return "1.3.0\n", nil
+		default:
+			return "", nil
+		}
+	}
+
+	cmd := newRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"doctor", "--config", cfgPath, "--repo", filepath.Dir(cfgPath)})
+
+	require.NoError(t, cmd.Execute())
+	output := buf.String()
+	assert.Contains(t, output, "PASS runtime tool go")
+	assert.Contains(t, output, "go version go1.25.0 windows/amd64")
+	assert.Contains(t, output, "PASS runtime tool node")
+	assert.Contains(t, output, "v24.0.0")
+	assert.Contains(t, output, "PASS runtime tool bun")
+	assert.Contains(t, output, "1.3.0")
+}
+
+func TestDoctorCommandWarnsWhenRuntimeVersionProbeFails(t *testing.T) {
+	cfgPath := writeRootWorkflowConfig(t, `---
+tracker:
+  type: internal
+---
+Local operator workflow.
+`)
+
+	restoreDoctorTestHooks(t)
+	doctorLookPath = func(name string) (string, error) {
+		switch name {
+		case "git", "go", "node", "bun", "codex":
+			return name, nil
+		default:
+			return "", exec.ErrNotFound
+		}
+	}
+	doctorRunCommand = func(_ context.Context, _ string, name string, args ...string) (string, error) {
+		switch {
+		case name == "git" && strings.Join(args, " ") == "rev-parse --is-inside-work-tree":
+			return "true\n", nil
+		case name == "git" && strings.Join(args, " ") == "status --short":
+			return "", nil
+		case name == "go" && strings.Join(args, " ") == "version":
+			return "go version failed", errors.New("go version failed")
+		default:
+			return "", nil
+		}
+	}
+
+	cmd := newRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"doctor", "--config", cfgPath, "--repo", filepath.Dir(cfgPath)})
+
+	require.NoError(t, cmd.Execute())
+	output := buf.String()
+	assert.Contains(t, output, "WARN runtime tool go")
+	assert.Contains(t, output, "found at go")
+	assert.Contains(t, output, "could not inspect version")
+	assert.Contains(t, output, "readiness checks passed")
+}
+
 func TestDoctorCommandFindsBunUserInstallWhenBunIsNotOnPath(t *testing.T) {
 	t.Setenv("BUN_INSTALL", "")
 
