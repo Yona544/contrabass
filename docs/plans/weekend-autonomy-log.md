@@ -116,3 +116,12 @@
 - Tests run: `go test ./cmd/contrabass -run TestDoctorAbsPath -count=1 -v`, `go test ./cmd/contrabass -coverprofile $p -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus -- detect-changes --repo contrabass`.
 - Commit hash: `7341dd3`.
 - Remaining follow-up: continue with CLI helper tests only where GitNexus impact is LOW; avoid broad team runtime execution paths without a failing case.
+
+## 2026-05-17 - CLI helper coverage
+
+- Task selected: add focused tests for `firstCommandToken`, `appendUniqueString`, and `stringFromMap`.
+- Why it was valuable: these low-impact helpers shape doctor runtime diagnostics and board sync metadata; the `firstCommandToken` test exposed and fixed quoted executable paths containing spaces.
+- Files changed: `cmd/contrabass/doctor.go`, `cmd/contrabass/doctor_test.go`, `cmd/contrabass/team_board_test.go`.
+- Tests run: `go test ./cmd/contrabass -run 'TestFirstCommandToken|TestAppendUniqueString|TestStringFromMap' -count=1 -v`, `go test ./cmd/contrabass -coverprofile $p -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`.
+- Commit hash: `c6653f3`.
+- Remaining follow-up: continue checking helper candidates case by case; skip `formatCommandOutput` unless a concrete bug justifies the HIGH impact path.
