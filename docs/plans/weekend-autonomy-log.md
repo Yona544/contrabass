@@ -89,3 +89,12 @@
 - Tests run: `go test ./cmd/contrabass -run TestAgentRuntimeTool -count=1 -v`, `go test ./cmd/contrabass -coverprofile $p -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus -- detect-changes --repo contrabass`.
 - Commit hash: `75c9d38`.
 - Remaining follow-up: skip `binaryPathForAgent` for now unless there is a concrete failure; GitNexus reports it as CRITICAL because team execution and worker startup depend on it.
+
+## 2026-05-17 - team CLI error formatting coverage
+
+- Task selected: add a focused test for `teamCLIError.Error`.
+- Why it was valuable: this is a pure agent helper used to surface team CLI failures, and it improved `internal/agent` coverage without entering process lifecycle code.
+- Files changed: `internal/agent/teamcli_test.go`.
+- Tests run: `go test ./internal/agent -run TestTeamCLIErrorError -count=1 -v`, `go test ./internal/agent -coverprofile $p -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus -- detect-changes --repo contrabass`.
+- Commit hash: `c715e4a`.
+- Remaining follow-up: avoid `IsHeartbeatEvent` unless needed; GitNexus reports it as HIGH because orchestrator and SSE filtering depend on it.
