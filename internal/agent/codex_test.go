@@ -92,6 +92,56 @@ func TestCodexRunner_OverloadBudgetExhausted(t *testing.T) {
 	runner.mu.Unlock()
 }
 
+func TestCodexRunner_OverloadRetryDelay(t *testing.T) {
+	tests := []struct {
+		name    string
+		start   time.Duration
+		cap     time.Duration
+		attempt int
+		want    time.Duration
+	}{
+		{name: "disabled start delay", start: 0, cap: time.Second, attempt: 3, want: 0},
+		{name: "no cap uses start delay", start: 100 * time.Millisecond, cap: 0, attempt: 3, want: 100 * time.Millisecond},
+		{name: "first attempt uses start delay", start: 100 * time.Millisecond, cap: time.Second, attempt: 0, want: 100 * time.Millisecond},
+		{name: "backs off exponentially", start: 100 * time.Millisecond, cap: time.Second, attempt: 2, want: 400 * time.Millisecond},
+		{name: "caps oversized delay", start: 100 * time.Millisecond, cap: 250 * time.Millisecond, attempt: 2, want: 250 * time.Millisecond},
+		{name: "attempt four immediately caps", start: 100 * time.Millisecond, cap: time.Second, attempt: 4, want: time.Second},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &CodexRunner{
+				overloadStartDelay: tt.start,
+				overloadRetryCap:   tt.cap,
+			}
+
+			assert.Equal(t, tt.want, runner.overloadRetryDelay(tt.attempt))
+		})
+	}
+}
+
+func TestIsCodexOverloadRPCError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  interface{}
+		want bool
+	}{
+		{name: "json number code", err: map[string]interface{}{"code": float64(-32001)}, want: true},
+		{name: "integer code", err: map[string]interface{}{"code": -32001}, want: true},
+		{name: "string code", err: map[string]interface{}{"code": "-32001"}, want: true},
+		{name: "wrong code", err: map[string]interface{}{"code": float64(-32002)}, want: false},
+		{name: "fractional code", err: map[string]interface{}{"code": -32001.5}, want: false},
+		{name: "missing code", err: map[string]interface{}{"message": "server overloaded"}, want: false},
+		{name: "not a map", err: "server overloaded", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, isCodexOverloadRPCError(tt.err))
+		})
+	}
+}
+
 func TestCodexRunner_LargeAgentMessage(t *testing.T) {
 	runner := NewCodexRunner("unused", 5*time.Second)
 	input := bytes.Buffer{}
