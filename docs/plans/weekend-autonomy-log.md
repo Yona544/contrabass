@@ -125,3 +125,12 @@
 - Tests run: `go test ./cmd/contrabass -run 'TestFirstCommandToken|TestAppendUniqueString|TestStringFromMap' -count=1 -v`, `go test ./cmd/contrabass -coverprofile $p -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`.
 - Commit hash: `c6653f3`.
 - Remaining follow-up: continue checking helper candidates case by case; skip `formatCommandOutput` unless a concrete bug justifies the HIGH impact path.
+
+## 2026-05-17 - writable path and child retry helper coverage
+
+- Task selected: add tests for doctor writable-path probing and board child retry marking.
+- Why it was valuable: doctor readiness depends on probing existing parents without creating target directories, and board finalization must requeue only claimed child issues when a team run aborts.
+- Files changed: `cmd/contrabass/doctor_test.go`, `cmd/contrabass/team_board_test.go`.
+- Tests run: `go test ./cmd/contrabass -run 'TestNearestExistingDir|TestCheckWritablePath|TestBoardIssueSyncerMarkClaimedChildIssuesForRetry' -count=1 -v`, `go test ./cmd/contrabass -coverprofile $p -count=1`, `go test ./cmd/contrabass -run TestRun_DefaultInternalWorkflowUsesTeamExecution -count=1 -v`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`.
+- Commit hash: `319bc99`.
+- Remaining follow-up: continue avoiding `cloneStringMap` and team execution changes without a concrete bug; GitNexus reports that path as HIGH impact.
