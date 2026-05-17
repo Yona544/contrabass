@@ -80,3 +80,12 @@
 - Tests run: `go test ./cmd/contrabass -run TestBoardAssignCommandUpdatesAssignee -count=1 -v`, `go test ./cmd/contrabass -coverprofile $p -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus -- detect-changes --repo contrabass`.
 - Commit hash: `2cdec2a`.
 - Remaining follow-up: continue with narrow CLI tests around low-coverage helper paths before moving into `internal/agent`.
+
+## 2026-05-17 - doctor runtime tool selection coverage
+
+- Task selected: add table-driven tests for `agentRuntimeTool`.
+- Why it was valuable: doctor runtime readiness depends on selecting the right executable and remediation message for each supported agent type.
+- Files changed: `cmd/contrabass/doctor_test.go`.
+- Tests run: `go test ./cmd/contrabass -run TestAgentRuntimeTool -count=1 -v`, `go test ./cmd/contrabass -coverprofile $p -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus -- detect-changes --repo contrabass`.
+- Commit hash: `75c9d38`.
+- Remaining follow-up: skip `binaryPathForAgent` for now unless there is a concrete failure; GitNexus reports it as CRITICAL because team execution and worker startup depend on it.
