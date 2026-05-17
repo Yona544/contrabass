@@ -98,3 +98,12 @@
 - Tests run: `go test ./internal/agent -run TestTeamCLIErrorError -count=1 -v`, `go test ./internal/agent -coverprofile $p -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus -- detect-changes --repo contrabass`.
 - Commit hash: `c715e4a`.
 - Remaining follow-up: avoid `IsHeartbeatEvent` unless needed; GitNexus reports it as HIGH because orchestrator and SSE filtering depend on it.
+
+## 2026-05-17 - Codex overload helper coverage
+
+- Task selected: add tests for Codex overload retry delays and JSON-RPC overload error detection.
+- Why it was valuable: overload handling for JSON-RPC error `-32001` is a project target area, and these pure helpers can be covered without starting an agent process.
+- Files changed: `internal/agent/codex_test.go`.
+- Tests run: `go test ./internal/agent -run 'TestCodexRunner_OverloadRetryDelay|TestIsCodexOverloadRPCError' -count=1 -v`, `go test ./internal/agent -coverprofile $p -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus -- detect-changes --repo contrabass`.
+- Commit hash: `36eb30f`.
+- Remaining follow-up: future agent work should keep the same narrow shape; process lifecycle paths are slower and higher blast radius.
