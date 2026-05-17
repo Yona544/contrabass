@@ -448,6 +448,28 @@ func TestAgentRuntimeTool(t *testing.T) {
 	}
 }
 
+func TestDoctorAbsPath(t *testing.T) {
+	cwd := t.TempDir()
+	t.Chdir(cwd)
+	absInput := filepath.Join(cwd, "nested", "..", "target")
+
+	tests := []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{name: "blank defaults to current directory", value: " ", want: cwd},
+		{name: "relative path resolves from current directory", value: filepath.Join("nested", "..", "target"), want: filepath.Join(cwd, "target")},
+		{name: "absolute path is cleaned", value: absInput, want: filepath.Join(cwd, "target")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, filepath.Clean(tt.want), doctorAbsPath(tt.value))
+		})
+	}
+}
+
 func restoreDoctorTestHooks(t *testing.T) {
 	t.Helper()
 
