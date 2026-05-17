@@ -118,6 +118,46 @@ func TestBuildBoardTeamPlanUsesChildIssues(t *testing.T) {
 	}, plan.TaskIssueIDs)
 }
 
+func TestAppendUniqueString(t *testing.T) {
+	tests := []struct {
+		name      string
+		values    []string
+		candidate string
+		want      []string
+	}{
+		{name: "appends new value", values: []string{"CB-1"}, candidate: "CB-2", want: []string{"CB-1", "CB-2"}},
+		{name: "keeps existing value once", values: []string{"CB-1", "CB-2"}, candidate: "CB-2", want: []string{"CB-1", "CB-2"}},
+		{name: "allows empty candidate", values: nil, candidate: "", want: []string{""}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, appendUniqueString(tt.values, tt.candidate))
+		})
+	}
+}
+
+func TestStringFromMap(t *testing.T) {
+	tests := []struct {
+		name   string
+		values map[string]interface{}
+		key    string
+		want   string
+	}{
+		{name: "nil map", values: nil, key: "task_id", want: ""},
+		{name: "missing key", values: map[string]interface{}{"other": "value"}, key: "task_id", want: ""},
+		{name: "string value", values: map[string]interface{}{"task_id": "task-1"}, key: "task_id", want: "task-1"},
+		{name: "numeric value", values: map[string]interface{}{"attempt": 2}, key: "attempt", want: "2"},
+		{name: "bool value", values: map[string]interface{}{"ok": true}, key: "ok", want: "true"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, stringFromMap(tt.values, tt.key))
+		})
+	}
+}
+
 func TestBoardIssueSyncerLifecycle(t *testing.T) {
 	t.Parallel()
 

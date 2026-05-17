@@ -448,6 +448,25 @@ func TestAgentRuntimeTool(t *testing.T) {
 	}
 }
 
+func TestFirstCommandToken(t *testing.T) {
+	tests := []struct {
+		name    string
+		command string
+		want    string
+	}{
+		{name: "blank", command: "  ", want: ""},
+		{name: "bare command", command: "codex app-server", want: "codex"},
+		{name: "double quoted command", command: `"C:\Program Files\Codex\codex.exe" app-server`, want: `C:\Program Files\Codex\codex.exe`},
+		{name: "single quoted command", command: `'/opt/bin/opencode' serve`, want: "/opt/bin/opencode"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, firstCommandToken(tt.command))
+		})
+	}
+}
+
 func TestDoctorAbsPath(t *testing.T) {
 	cwd := t.TempDir()
 	t.Chdir(cwd)

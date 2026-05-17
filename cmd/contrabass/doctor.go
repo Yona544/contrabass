@@ -431,7 +431,16 @@ func agentRuntimeTool(cfg *config.WorkflowConfig) runtimeTool {
 }
 
 func firstCommandToken(command string) string {
-	fields := strings.Fields(strings.TrimSpace(command))
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return ""
+	}
+	if quote := command[0]; quote == '"' || quote == '\'' {
+		if end := strings.IndexByte(command[1:], quote); end >= 0 {
+			return command[1 : end+1]
+		}
+	}
+	fields := strings.Fields(command)
 	if len(fields) == 0 {
 		return ""
 	}
