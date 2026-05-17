@@ -67,6 +67,33 @@ func TestBoardCommandLifecycle(t *testing.T) {
 	assert.Contains(t, showOutput, "Looks good")
 }
 
+func TestBoardAssignCommandUpdatesAssignee(t *testing.T) {
+	t.Parallel()
+
+	boardDir := t.TempDir()
+	run := func(args ...string) string {
+		t.Helper()
+
+		cmd := newRootCmd()
+		buf := new(bytes.Buffer)
+		cmd.SetOut(buf)
+		cmd.SetErr(buf)
+		cmd.SetArgs(args)
+		require.NoError(t, cmd.Execute())
+		return buf.String()
+	}
+
+	run("board", "init", "--dir", boardDir, "--prefix", "OPS")
+	issueID := strings.TrimSpace(run("board", "create", "--dir", boardDir, "--title", "Assign me"))
+	require.Equal(t, "OPS-1", issueID)
+
+	assignOutput := run("board", "assign", "--dir", boardDir, issueID, "worker-a")
+	assert.Contains(t, assignOutput, "OPS-1 -> worker-a")
+
+	showOutput := run("board", "show", "--dir", boardDir, issueID)
+	assert.Contains(t, showOutput, "Assignee: worker-a")
+}
+
 func TestBoardCreateFlagsDoNotLeakAcrossRootCommands(t *testing.T) {
 	firstBoardDir := filepath.Join(t.TempDir(), "first-board")
 	first := newRootCmd()
