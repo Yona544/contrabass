@@ -14,6 +14,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/junhoyeo/contrabass/internal/config"
 )
 
 func TestDoctorCommandInternalWorkflowReportsReady(t *testing.T) {
@@ -387,6 +389,63 @@ Local operator workflow.
 	require.NoError(t, cmd.Execute())
 	assert.Contains(t, buf.String(), "PASS runtime tool bun")
 	assert.Contains(t, buf.String(), bunPath)
+}
+
+func TestAgentRuntimeTool(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  *config.WorkflowConfig
+		want runtimeTool
+	}{
+		{
+			name: "default codex",
+			cfg:  &config.WorkflowConfig{},
+			want: runtimeTool{name: "codex", action: "install codex or update codex.binary_path"},
+		},
+		{
+			name: "opencode",
+			cfg: &config.WorkflowConfig{
+				Agent:    config.AgentConfig{Type: "opencode"},
+				OpenCode: config.OpenCodeConfig{BinaryPath: `"/opt/bin/opencode" serve`},
+			},
+			want: runtimeTool{name: "/opt/bin/opencode", action: "install opencode or update opencode.binary_path"},
+		},
+		{
+			name: "oh-my-opencode",
+			cfg: &config.WorkflowConfig{
+				Agent:    config.AgentConfig{Type: "oh-my-opencode"},
+				OpenCode: config.OpenCodeConfig{BinaryPath: "oh-my-opencode serve"},
+			},
+			want: runtimeTool{name: "oh-my-opencode", action: "install oh-my-opencode/opencode or update opencode.binary_path"},
+		},
+		{
+			name: "omx",
+			cfg: &config.WorkflowConfig{
+				Agent: config.AgentConfig{Type: "omx"},
+				OMX:   config.OMXConfig{BinaryPath: "/opt/bin/omx team"},
+			},
+			want: runtimeTool{name: "/opt/bin/omx", action: "install omx or update omx.binary_path"},
+		},
+		{
+			name: "omc",
+			cfg: &config.WorkflowConfig{
+				Agent: config.AgentConfig{Type: "omc"},
+				OMC:   config.OMCConfig{BinaryPath: "/opt/bin/omc team"},
+			},
+			want: runtimeTool{name: "/opt/bin/omc", action: "install omc or update omc.binary_path"},
+		},
+		{
+			name: "unknown",
+			cfg:  &config.WorkflowConfig{Agent: config.AgentConfig{Type: "custom"}},
+			want: runtimeTool{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, agentRuntimeTool(tt.cfg))
+		})
+	}
 }
 
 func restoreDoctorTestHooks(t *testing.T) {
