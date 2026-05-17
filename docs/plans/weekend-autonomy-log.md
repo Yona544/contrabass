@@ -71,3 +71,12 @@
 - Tests run: `go test ./internal/tmux -run 'TestCLIRegistry_RegisterValidationErrors|TestCLIRegistry_RegisterTrimsAgentType|TestCLIRegistry_ListEmptyForNilOrEmptyRegistry|TestMustRegisterPanicsOnInvalidConfig|TestIsValidPromptMode' -count=1 -v`, `go test ./internal/tmux -coverprofile $p -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect`.
 - Commit hash: `eacbcd2`.
 - Remaining follow-up: move to broader packages only with focused targets; remaining tmux gaps are mostly command-execution and lifecycle integration paths.
+
+## 2026-05-17 - board assign CLI coverage
+
+- Task selected: add a focused CLI test for `board assign`.
+- Why it was valuable: `runBoardAssign` was only lightly covered despite persisting assignees used by board dispatch and team routing.
+- Files changed: `cmd/contrabass/board_test.go`.
+- Tests run: `go test ./cmd/contrabass -run TestBoardAssignCommandUpdatesAssignee -count=1 -v`, `go test ./cmd/contrabass -coverprofile $p -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus -- detect-changes --repo contrabass`.
+- Commit hash: `2cdec2a`.
+- Remaining follow-up: continue with narrow CLI tests around low-coverage helper paths before moving into `internal/agent`.
