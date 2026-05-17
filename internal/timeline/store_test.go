@@ -1,6 +1,7 @@
 package timeline
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -235,6 +236,65 @@ func TestStoreLoadSnapshotEmpty(t *testing.T) {
 	assert.NotNil(t, snapshot.RunSyncByID)
 	assert.NotNil(t, snapshot.NodeSyncByKey)
 	assert.WithinDuration(t, time.Now(), snapshot.GeneratedAt, 2*time.Second)
+}
+
+func TestStoreListIssueIDs(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(t *testing.T, dir string)
+		want  []string
+	}{
+		{
+			name: "missing directory",
+		},
+		{
+			name: "sorted jsonl issue files",
+			setup: func(t *testing.T, dir string) {
+				t.Helper()
+				require.NoError(t, os.MkdirAll(dir, 0o755))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "ENG-2.jsonl"), []byte("{}\n"), 0o644))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "ENG-1.jsonl"), []byte("{}\n"), 0o644))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "ENG-3.jsonl.lock"), []byte("lock"), 0o644))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("ignore"), 0o644))
+				require.NoError(t, os.MkdirAll(filepath.Join(dir, "ENG-4.jsonl"), 0o755))
+			},
+			want: []string{"ENG-1", "ENG-2"},
+		},
+		{
+			name: "canceled context",
+			setup: func(t *testing.T, dir string) {
+				t.Helper()
+				require.NoError(t, os.MkdirAll(dir, 0o755))
+			},
+			want: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := filepath.Join(t.TempDir(), "timeline")
+			store := NewStore(dir)
+			if tt.setup != nil {
+				tt.setup(t, dir)
+			}
+
+			ctx := context.Background()
+			if tt.name == "canceled context" {
+				canceled, cancel := context.WithCancel(ctx)
+				cancel()
+				ctx = canceled
+			}
+
+			got, err := store.ListIssueIDs(ctx)
+			if tt.name == "canceled context" {
+				require.ErrorIs(t, err, context.Canceled)
+				assert.Nil(t, got)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }
 
 func TestRenderNodeCommentBodyIncludesHiddenMarker(t *testing.T) {

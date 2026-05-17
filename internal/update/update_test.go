@@ -163,6 +163,52 @@ func TestCheck(t *testing.T) {
 	})
 }
 
+func TestCheckUsesFreshCachedLatest(t *testing.T) {
+	dir := t.TempDir()
+	setUserHome(t, dir)
+
+	writeState(&State{
+		LastCheckedAt:  time.Now().UTC().Format(time.RFC3339),
+		LastSeenLatest: "0.2.0",
+	})
+
+	r := Check(context.Background(), "0.1.0")
+	assert.Equal(t, Result{
+		Available: true,
+		Current:   "0.1.0",
+		Latest:    "0.2.0",
+	}, r)
+}
+
+func TestCheckFetchesAndPersistsLatest(t *testing.T) {
+	dir := t.TempDir()
+	setUserHome(t, dir)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "application/vnd.github+json", r.Header.Get("Accept"))
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"tag_name": "v0.2.0"})
+	}))
+	defer server.Close()
+
+	orig := releasesURL
+	defer func() { setGitHubReleasesURL(orig) }()
+	setGitHubReleasesURL(server.URL)
+
+	r := Check(context.Background(), "0.1.0")
+	assert.Equal(t, Result{
+		Available: true,
+		Current:   "0.1.0",
+		Latest:    "0.2.0",
+	}, r)
+
+	state := readState()
+	require.NotNil(t, state)
+	assert.Equal(t, "0.2.0", state.LastSeenLatest)
+	_, err := time.Parse(time.RFC3339, state.LastCheckedAt)
+	require.NoError(t, err)
+}
+
 func TestFormatNotification(t *testing.T) {
 	t.Run("available", func(t *testing.T) {
 		msg := FormatNotification(Result{Available: true, Current: "0.1.0", Latest: "0.2.0"})
@@ -179,22 +225,65 @@ func TestFormatNotification(t *testing.T) {
 
 func TestStateReadWrite(t *testing.T) {
 	dir := t.TempDir()
-	p := filepath.Join(dir, stateFile)
+	setUserHome(t, dir)
 
 	s := &State{
 		LastCheckedAt:  "2026-03-08T12:00:00Z",
 		LastSeenLatest: "0.2.0",
 	}
+	writeState(s)
 
-	data, err := json.Marshal(s)
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(p, data, 0o644))
-
-	read, err := os.ReadFile(p)
+	p := filepath.Join(dir, stateDir, stateFile)
+	data, err := os.ReadFile(p)
 	require.NoError(t, err)
 
-	var loaded State
-	require.NoError(t, json.Unmarshal(read, &loaded))
+	var persisted State
+	require.NoError(t, json.Unmarshal(data, &persisted))
+	assert.Equal(t, s.LastCheckedAt, persisted.LastCheckedAt)
+	assert.Equal(t, s.LastSeenLatest, persisted.LastSeenLatest)
+
+	loaded := readState()
+	require.NotNil(t, loaded)
 	assert.Equal(t, s.LastCheckedAt, loaded.LastCheckedAt)
 	assert.Equal(t, s.LastSeenLatest, loaded.LastSeenLatest)
+}
+
+func TestReadStateMissingOrInvalid(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(t *testing.T, dir string)
+	}{
+		{
+			name: "missing state file",
+		},
+		{
+			name: "invalid json",
+			setup: func(t *testing.T, dir string) {
+				t.Helper()
+				p := filepath.Join(dir, stateDir, stateFile)
+				require.NoError(t, os.MkdirAll(filepath.Dir(p), 0o755))
+				require.NoError(t, os.WriteFile(p, []byte("{"), 0o644))
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			setUserHome(t, dir)
+			if tt.setup != nil {
+				tt.setup(t, dir)
+			}
+
+			assert.Nil(t, readState())
+		})
+	}
+}
+
+func setUserHome(t *testing.T, dir string) {
+	t.Helper()
+	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
+	t.Setenv("HOMEDRIVE", "")
+	t.Setenv("HOMEPATH", "")
 }

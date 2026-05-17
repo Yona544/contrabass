@@ -171,3 +171,22 @@ func TestWorkerBootstrapIsWorkerAlive(t *testing.T) {
 		})
 	}
 }
+
+func TestShellQuote(t *testing.T) {
+	testCases := []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{name: "empty", value: "", want: "''"},
+		{name: "simple", value: "contrabass", want: "'contrabass'"},
+		{name: "space", value: "work dir", want: "'work dir'"},
+		{name: "single quote", value: "it's ready", want: "'it'\"'\"'s ready'"},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			assert.Equal(t, testCase.want, shellQuote(testCase.value))
+		})
+	}
+}

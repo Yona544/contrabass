@@ -54,6 +54,33 @@ func TestRunPhaseString(t *testing.T) {
 	}
 }
 
+func TestRunPhaseLabel(t *testing.T) {
+	tests := []struct {
+		name     string
+		phase    RunPhase
+		expected string
+	}{
+		{"preparing workspace", PreparingWorkspace, "PreparingWorkspace"},
+		{"building prompt", BuildingPrompt, "PreparingWorkspace"},
+		{"launching agent process", LaunchingAgentProcess, "RunningAgent"},
+		{"initializing session", InitializingSession, "RunningAgent"},
+		{"streaming turn", StreamingTurn, "AgentRunning"},
+		{"finishing", Finishing, "Releasing"},
+		{"succeeded", Succeeded, "Done"},
+		{"failed", Failed, "Failed"},
+		{"timed out", TimedOut, "Failed"},
+		{"stalled", Stalled, "Failed"},
+		{"canceled by reconciliation", CanceledByReconciliation, "Canceled"},
+		{"unknown", RunPhase(999), ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, tt.phase.Label())
+		})
+	}
+}
+
 func TestIssueStateEnumContiguity(t *testing.T) {
 	// Verify that IssueState enum values are contiguous (no gaps)
 	expected := []IssueState{Unclaimed, Claimed, Running, RetryQueued, Released}

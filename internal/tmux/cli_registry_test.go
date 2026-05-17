@@ -81,6 +81,76 @@ func TestCLIRegistry_RegisterAddsNewConfig(t *testing.T) {
 	assert.Equal(t, "arg", cfg.PromptMode)
 }
 
+func TestCLIRegistry_RegisterValidationErrors(t *testing.T) {
+	validBuildArgs := func(_, _ string) []string {
+		return []string{"run"}
+	}
+
+	testCases := []struct {
+		name    string
+		reg     *CLIRegistry
+		config  CLIConfig
+		errLike string
+	}{
+		{
+			name:    "nil registry",
+			reg:     nil,
+			config:  CLIConfig{},
+			errLike: "registry is nil",
+		},
+		{
+			name:    "empty agent type",
+			reg:     &CLIRegistry{configs: map[string]CLIConfig{}},
+			config:  CLIConfig{BinaryPath: "agent", BuildArgs: validBuildArgs, PromptMode: promptModeArg},
+			errLike: "agent type is empty",
+		},
+		{
+			name:    "empty binary path",
+			reg:     &CLIRegistry{configs: map[string]CLIConfig{}},
+			config:  CLIConfig{AgentType: "agent", BuildArgs: validBuildArgs, PromptMode: promptModeArg},
+			errLike: "binary path is empty",
+		},
+		{
+			name:    "nil build args",
+			reg:     &CLIRegistry{configs: map[string]CLIConfig{}},
+			config:  CLIConfig{AgentType: "agent", BinaryPath: "agent", PromptMode: promptModeArg},
+			errLike: "build args function is nil",
+		},
+		{
+			name:    "invalid prompt mode",
+			reg:     &CLIRegistry{configs: map[string]CLIConfig{}},
+			config:  CLIConfig{AgentType: "agent", BinaryPath: "agent", BuildArgs: validBuildArgs, PromptMode: "socket"},
+			errLike: "invalid prompt mode",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			err := testCase.reg.Register(testCase.config)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), testCase.errLike)
+		})
+	}
+}
+
+func TestCLIRegistry_RegisterTrimsAgentType(t *testing.T) {
+	r := &CLIRegistry{configs: map[string]CLIConfig{}}
+
+	require.NoError(t, r.Register(CLIConfig{
+		AgentType:  " gemini ",
+		BinaryPath: "gemini",
+		BuildArgs: func(_, _ string) []string {
+			return []string{"run"}
+		},
+		PromptMode: promptModeArg,
+	}))
+
+	cfg, err := r.Get("gemini")
+	require.NoError(t, err)
+	require.NotNil(t, cfg)
+	assert.Equal(t, "gemini", cfg.AgentType)
+}
+
 func TestCLIRegistry_RegisterOverridesExistingConfig(t *testing.T) {
 	r := NewCLIRegistry()
 
@@ -122,6 +192,22 @@ func TestCLIRegistry_ListReturnsAllConfigs(t *testing.T) {
 	assert.True(t, seen["oh-my-opencode"])
 }
 
+func TestCLIRegistry_ListEmptyForNilOrEmptyRegistry(t *testing.T) {
+	testCases := []struct {
+		name string
+		reg  *CLIRegistry
+	}{
+		{name: "nil registry", reg: nil},
+		{name: "empty registry", reg: &CLIRegistry{configs: map[string]CLIConfig{}}},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			assert.Empty(t, testCase.reg.List())
+		})
+	}
+}
+
 func TestCLIRegistry_BuildArgsForEachAgentType(t *testing.T) {
 	r := NewCLIRegistry()
 
@@ -143,6 +229,39 @@ func TestCLIRegistry_BuildArgsForEachAgentType(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, cfg)
 			assert.Equal(t, testCase.want, cfg.BuildArgs("/workspace", "test prompt"))
+		})
+	}
+}
+
+func TestMustRegisterPanicsOnInvalidConfig(t *testing.T) {
+	assert.Panics(t, func() {
+		mustRegister(&CLIRegistry{configs: map[string]CLIConfig{}}, CLIConfig{
+			AgentType:  "agent",
+			BinaryPath: "agent",
+			BuildArgs: func(_, _ string) []string {
+				return []string{"run"}
+			},
+			PromptMode: "socket",
+		})
+	})
+}
+
+func TestIsValidPromptMode(t *testing.T) {
+	testCases := []struct {
+		name string
+		mode string
+		want bool
+	}{
+		{name: "stdin", mode: promptModeStdin, want: true},
+		{name: "file", mode: promptModeFile, want: true},
+		{name: "arg", mode: promptModeArg, want: true},
+		{name: "empty", mode: "", want: false},
+		{name: "socket", mode: "socket", want: false},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			assert.Equal(t, testCase.want, isValidPromptMode(testCase.mode))
 		})
 	}
 }
