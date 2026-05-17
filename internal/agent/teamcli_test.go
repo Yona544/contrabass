@@ -58,6 +58,25 @@ workers: 2
 	}
 }
 
+func TestTeamCLIErrorError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  *teamCLIError
+		want string
+	}{
+		{name: "nil", err: nil, want: ""},
+		{name: "code and message", err: &teamCLIError{Code: "missing_team", Message: "team not found"}, want: "missing_team: team not found"},
+		{name: "code only", err: &teamCLIError{Code: "missing_team"}, want: "missing_team"},
+		{name: "message only", err: &teamCLIError{Message: "team not found"}, want: "team not found"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tt.err.Error())
+		})
+	}
+}
+
 // T4 — TestReadOmxMetrics
 
 func TestReadOmxMetrics(t *testing.T) {
