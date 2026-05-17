@@ -107,3 +107,12 @@
 - Tests run: `go test ./internal/agent -run 'TestCodexRunner_OverloadRetryDelay|TestIsCodexOverloadRPCError' -count=1 -v`, `go test ./internal/agent -coverprofile $p -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus -- detect-changes --repo contrabass`.
 - Commit hash: `36eb30f`.
 - Remaining follow-up: future agent work should keep the same narrow shape; process lifecycle paths are slower and higher blast radius.
+
+## 2026-05-17 - doctor path normalization coverage
+
+- Task selected: add tests for `doctorAbsPath`.
+- Why it was valuable: doctor diagnostics rely on normalized paths for repo/config/writable checks, and this covers blank, relative, and absolute inputs without touching production code.
+- Files changed: `cmd/contrabass/doctor_test.go`.
+- Tests run: `go test ./cmd/contrabass -run TestDoctorAbsPath -count=1 -v`, `go test ./cmd/contrabass -coverprofile $p -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus -- detect-changes --repo contrabass`.
+- Commit hash: `7341dd3`.
+- Remaining follow-up: continue with CLI helper tests only where GitNexus impact is LOW; avoid broad team runtime execution paths without a failing case.
