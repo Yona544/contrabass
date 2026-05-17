@@ -489,6 +489,93 @@ func TestDoctorAbsPath(t *testing.T) {
 	}
 }
 
+func TestNearestExistingDir(t *testing.T) {
+	root := t.TempDir()
+	existing := filepath.Join(root, "existing")
+	require.NoError(t, os.Mkdir(existing, 0o755))
+	filePath := filepath.Join(root, "file")
+	require.NoError(t, os.WriteFile(filePath, []byte("not a directory"), 0o644))
+
+	tests := []struct {
+		name         string
+		target       string
+		wantDir      string
+		wantExists   bool
+		wantErrMatch string
+	}{
+		{name: "existing directory", target: existing, wantDir: existing, wantExists: true},
+		{name: "missing child uses parent", target: filepath.Join(existing, "child", "leaf"), wantDir: existing, wantExists: false},
+		{name: "file target fails", target: filePath, wantErrMatch: "exists but is not a directory"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotDir, gotExists, err := nearestExistingDir(tt.target)
+			if tt.wantErrMatch != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErrMatch)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, filepath.Clean(tt.wantDir), gotDir)
+			assert.Equal(t, tt.wantExists, gotExists)
+		})
+	}
+}
+
+func TestCheckWritablePath(t *testing.T) {
+	root := t.TempDir()
+	existing := filepath.Join(root, "existing")
+	require.NoError(t, os.Mkdir(existing, 0o755))
+	filePath := filepath.Join(root, "file")
+	require.NoError(t, os.WriteFile(filePath, []byte("not a directory"), 0o644))
+
+	tests := []struct {
+		name        string
+		target      string
+		wantLevel   doctorSeverity
+		wantDetails []string
+	}{
+		{
+			name:      "existing directory is writable",
+			target:    existing,
+			wantLevel: doctorPass,
+			wantDetails: []string{
+				existing + " is writable",
+			},
+		},
+		{
+			name:      "missing child probes existing parent",
+			target:    filepath.Join(existing, "child"),
+			wantLevel: doctorPass,
+			wantDetails: []string{
+				"writable via " + existing,
+			},
+		},
+		{
+			name:      "file target fails",
+			target:    filePath,
+			wantLevel: doctorFail,
+			wantDetails: []string{
+				"cannot find existing parent",
+				"exists but is not a directory",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			diagnostics := checkWritablePath("test path", tt.target)
+			require.Len(t, diagnostics, 1)
+			assert.Equal(t, tt.wantLevel, diagnostics[0].Severity)
+			assert.Equal(t, "test path", diagnostics[0].Name)
+			for _, detail := range tt.wantDetails {
+				assert.Contains(t, diagnostics[0].Detail, detail)
+			}
+		})
+	}
+}
+
 func restoreDoctorTestHooks(t *testing.T) {
 	t.Helper()
 

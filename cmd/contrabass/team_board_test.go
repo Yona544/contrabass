@@ -258,6 +258,72 @@ func TestBoardIssueSyncerFinalizeErrorMarksRetry(t *testing.T) {
 	assert.Contains(t, comments[len(comments)-1].Body, "ended with error: boom")
 }
 
+func TestBoardIssueSyncerMarkClaimedChildIssuesForRetry(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	localTracker := tracker.NewLocalTracker(tracker.LocalConfig{
+		BoardDir:    filepath.Join(t.TempDir(), "board"),
+		IssuePrefix: "CB",
+		Actor:       "team:issue-cb-10",
+	})
+
+	_, err := localTracker.InitBoard(ctx)
+	require.NoError(t, err)
+
+	parent, err := localTracker.CreateIssue(ctx, "Parent", "Parent issue", nil)
+	require.NoError(t, err)
+	childInProgress, err := localTracker.CreateIssueWithOptions(ctx, tracker.LocalIssueCreateOptions{
+		Title:    "Claimed child",
+		ParentID: parent.ID,
+	})
+	require.NoError(t, err)
+	childTodo, err := localTracker.CreateIssueWithOptions(ctx, tracker.LocalIssueCreateOptions{
+		Title:    "Queued child",
+		ParentID: parent.ID,
+	})
+	require.NoError(t, err)
+
+	_, err = localTracker.UpdateIssue(ctx, childInProgress.ID, func(issue *tracker.LocalBoardIssue) error {
+		issue.State = tracker.LocalBoardStateInProgress
+		issue.ClaimedBy = "worker-1"
+		return nil
+	})
+	require.NoError(t, err)
+
+	syncer := newBoardIssueSyncer(localTracker, parent.ID, "issue-cb-10", map[string]string{
+		"003-cb-11-exec": childInProgress.ID,
+		"004-cb-12-exec": childTodo.ID,
+		"parent":         parent.ID,
+		"empty":          "",
+	})
+
+	syncer.markClaimedChildIssuesForRetry(ctx, errors.New("boom"))
+
+	updatedChild, err := localTracker.GetIssue(ctx, childInProgress.ID)
+	require.NoError(t, err)
+	assert.Equal(t, tracker.LocalBoardStateRetry, updatedChild.State)
+	assert.Empty(t, updatedChild.ClaimedBy)
+	assert.Equal(t, "issue-cb-10", updatedChild.TrackerMeta["team_name"])
+	assert.Equal(t, parent.ID, updatedChild.TrackerMeta["parent_issue_id"])
+	assert.Equal(t, "retry", updatedChild.TrackerMeta["team_status"])
+	assert.Equal(t, "run_error", updatedChild.TrackerMeta["last_team_event"])
+	assert.NotEmpty(t, updatedChild.TrackerMeta["last_team_event_at"])
+
+	childComments, err := localTracker.ListComments(ctx, childInProgress.ID)
+	require.NoError(t, err)
+	require.NotEmpty(t, childComments)
+	assert.Contains(t, childComments[len(childComments)-1].Body, "team issue-cb-10 aborted while executing child issue: boom")
+
+	unchangedChild, err := localTracker.GetIssue(ctx, childTodo.ID)
+	require.NoError(t, err)
+	assert.Equal(t, tracker.LocalBoardStateTodo, unchangedChild.State)
+
+	unchangedComments, err := localTracker.ListComments(ctx, childTodo.ID)
+	require.NoError(t, err)
+	assert.Empty(t, unchangedComments)
+}
+
 func TestBoardIssueSyncerSyncsChildIssues(t *testing.T) {
 	t.Parallel()
 
