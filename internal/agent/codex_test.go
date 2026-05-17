@@ -142,6 +142,28 @@ func TestIsCodexOverloadRPCError(t *testing.T) {
 	}
 }
 
+func TestExtractNestedString(t *testing.T) {
+	tests := []struct {
+		name string
+		data map[string]interface{}
+		k1   string
+		k2   string
+		want string
+	}{
+		{name: "missing outer key", data: map[string]interface{}{}, k1: "params", k2: "text", want: ""},
+		{name: "outer key is not object", data: map[string]interface{}{"params": "bad"}, k1: "params", k2: "text", want: ""},
+		{name: "missing inner key", data: map[string]interface{}{"params": map[string]interface{}{}}, k1: "params", k2: "text", want: ""},
+		{name: "inner key is not string", data: map[string]interface{}{"params": map[string]interface{}{"text": 42}}, k1: "params", k2: "text", want: ""},
+		{name: "inner string", data: map[string]interface{}{"params": map[string]interface{}{"text": "hello"}}, k1: "params", k2: "text", want: "hello"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, extractNestedString(tt.data, tt.k1, tt.k2))
+		})
+	}
+}
+
 func TestCodexRunner_LargeAgentMessage(t *testing.T) {
 	runner := NewCodexRunner("unused", 5*time.Second)
 	input := bytes.Buffer{}

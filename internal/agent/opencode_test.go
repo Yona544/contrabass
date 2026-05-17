@@ -30,6 +30,65 @@ func TestOpenCodeRunner_CompileTimeCheck(t *testing.T) {
 	assert.Equal(t, time.Duration(0), runner.streamClient.Timeout)
 }
 
+func TestOpenCodeEventPayloadSessionID(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload map[string]interface{}
+		want    string
+	}{
+		{name: "missing properties", payload: map[string]interface{}{}, want: ""},
+		{name: "properties is not object", payload: map[string]interface{}{"properties": "bad"}, want: ""},
+		{name: "missing session id", payload: map[string]interface{}{"properties": map[string]interface{}{}}, want: ""},
+		{name: "session id", payload: map[string]interface{}{"properties": map[string]interface{}{"sessionID": "sess-1"}}, want: "sess-1"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, eventPayloadSessionID(tt.payload))
+		})
+	}
+}
+
+func TestOpenCodeEventPayloadIdle(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload map[string]interface{}
+		want    bool
+	}{
+		{name: "missing properties", payload: map[string]interface{}{}, want: false},
+		{name: "missing status", payload: map[string]interface{}{"properties": map[string]interface{}{}}, want: false},
+		{name: "status is not object", payload: map[string]interface{}{"properties": map[string]interface{}{"status": "idle"}}, want: false},
+		{name: "busy status", payload: map[string]interface{}{"properties": map[string]interface{}{"status": map[string]interface{}{"type": "busy"}}}, want: false},
+		{name: "idle status", payload: map[string]interface{}{"properties": map[string]interface{}{"status": map[string]interface{}{"type": "idle"}}}, want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, eventPayloadIdle(tt.payload))
+		})
+	}
+}
+
+func TestExtractListeningURL(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want string
+	}{
+		{name: "no URL", line: "server starting", want: ""},
+		{name: "http URL", line: "listening on http://127.0.0.1:4096", want: "http://127.0.0.1:4096"},
+		{name: "https URL", line: "ready: https://localhost:3000/", want: "https://localhost:3000/"},
+		{name: "quoted URL", line: "listening at \"http://127.0.0.1:4096\"", want: "http://127.0.0.1:4096"},
+		{name: "URL before trailing fields", line: "open http://127.0.0.1:4096 now", want: "http://127.0.0.1:4096"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, extractListeningURL(tt.line))
+		})
+	}
+}
+
 func TestOpenCodeRunner_Close(t *testing.T) {
 	runner := NewOpenCodeRunner("opencode serve", 0, "", "", time.Second)
 	require.NoError(t, runner.Close())

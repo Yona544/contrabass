@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -73,6 +74,133 @@ func TestTeamCLIErrorError(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.Equal(t, tt.want, tt.err.Error())
+		})
+	}
+}
+
+func TestBuildTeamTaskSeed(t *testing.T) {
+	tests := []struct {
+		name   string
+		issue  types.Issue
+		prompt string
+		want   string
+	}{
+		{
+			name:  "uses issue id and title",
+			issue: types.Issue{ID: "CB-1", Title: "Ship helper coverage"},
+			want:  "CB-1 Ship helper coverage",
+		},
+		{
+			name:  "trims issue fields",
+			issue: types.Issue{ID: " CB-2 ", Title: " Fix diagnostics "},
+			want:  "CB-2 Fix diagnostics",
+		},
+		{
+			name:   "falls back to first prompt line",
+			prompt: "Implement the thing\nwith more details",
+			want:   "Implement the thing",
+		},
+		{
+			name:   "truncates long prompt line",
+			prompt: strings.Repeat("a", 90),
+			want:   strings.Repeat("a", 80),
+		},
+		{
+			name:   "blank inputs use stable fallback",
+			prompt: " \n ",
+			want:   "team-task",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, buildTeamTaskSeed(tt.issue, tt.prompt))
+		})
+	}
+}
+
+func TestSummarizePhase(t *testing.T) {
+	tests := []struct {
+		name    string
+		summary teamSummary
+		want    string
+	}{
+		{name: "failed wins", summary: teamSummary{Tasks: teamSummaryTaskCounts{Total: 3, Completed: 3, Failed: 1}}, want: "failed"},
+		{name: "all tasks completed", summary: teamSummary{Tasks: teamSummaryTaskCounts{Total: 2, Completed: 2}}, want: "completed"},
+		{name: "in progress wins over blocked", summary: teamSummary{Tasks: teamSummaryTaskCounts{Blocked: 1, InProgress: 1}}, want: "in_progress"},
+		{name: "blocked", summary: teamSummary{Tasks: teamSummaryTaskCounts{Blocked: 1}}, want: "blocked"},
+		{name: "pending", summary: teamSummary{}, want: "pending"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, summarizePhase(tt.summary))
+		})
+	}
+}
+
+func TestPrimaryTask(t *testing.T) {
+	tests := []struct {
+		name  string
+		tasks []teamTask
+		want  teamTask
+		ok    bool
+	}{
+		{name: "empty", tasks: nil, ok: false},
+		{
+			name:  "lowest numeric id",
+			tasks: []teamTask{{ID: "10", Subject: "later"}, {ID: "2", Subject: "earlier"}},
+			want:  teamTask{ID: "2", Subject: "earlier"},
+			ok:    true,
+		},
+		{
+			name:  "lexical fallback",
+			tasks: []teamTask{{ID: "task-b", Subject: "later"}, {ID: "task-a", Subject: "earlier"}},
+			want:  teamTask{ID: "task-a", Subject: "earlier"},
+			ok:    true,
+		},
+		{
+			name:  "mixed ids use lexical ordering",
+			tasks: []teamTask{{ID: "10", Subject: "numeric"}, {ID: "task-a", Subject: "named"}},
+			want:  teamTask{ID: "10", Subject: "numeric"},
+			ok:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := primaryTask(tt.tasks)
+			assert.Equal(t, tt.ok, ok)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestMustJSONMap(t *testing.T) {
+	type payload struct {
+		Name string `json:"name"`
+	}
+
+	tests := []struct {
+		name              string
+		value             interface{}
+		want              map[string]interface{}
+		wantErrorContains string
+	}{
+		{name: "struct", value: payload{Name: "alpha"}, want: map[string]interface{}{"name": "alpha"}},
+		{name: "map", value: map[string]interface{}{"count": 2}, want: map[string]interface{}{"count": float64(2)}},
+		{name: "marshal error", value: map[string]interface{}{"bad": func() {}}, wantErrorContains: "unsupported type"},
+		{name: "unmarshal error", value: []string{"bad"}, wantErrorContains: "cannot unmarshal array"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := mustJSONMap(tt.value)
+			if tt.wantErrorContains != "" {
+				assert.Contains(t, got["error"], tt.wantErrorContains)
+				return
+			}
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
