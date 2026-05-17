@@ -134,3 +134,12 @@
 - Tests run: `go test ./cmd/contrabass -run 'TestNearestExistingDir|TestCheckWritablePath|TestBoardIssueSyncerMarkClaimedChildIssuesForRetry' -count=1 -v`, `go test ./cmd/contrabass -coverprofile $p -count=1`, `go test ./cmd/contrabass -run TestRun_DefaultInternalWorkflowUsesTeamExecution -count=1 -v`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`.
 - Commit hash: `319bc99`.
 - Remaining follow-up: continue avoiding `cloneStringMap` and team execution changes without a concrete bug; GitNexus reports that path as HIGH impact.
+
+## 2026-05-17 - narrow agent helper coverage
+
+- Task selected: add focused tests for Codex nested string extraction, OpenCode event payload helpers, team task seed selection, phase summarization, primary task selection, and JSON map conversion.
+- Why it was valuable: these helpers shape agent event parsing and team-monitor summaries, and they can be verified without starting external agent processes.
+- Files changed: `internal/agent/codex_test.go`, `internal/agent/opencode_test.go`, `internal/agent/teamcli_test.go`.
+- Tests run: `go test ./internal/agent -run 'TestBuildTeamTaskSeed|TestSummarizePhase|TestPrimaryTask|TestMustJSONMap|TestOpenCodeEventPayloadSessionID|TestOpenCodeEventPayloadIdle|TestExtractListeningURL|TestExtractNestedString' -count=1 -v`, `go test ./internal/agent -coverprofile $p -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`.
+- Commit hash: `e3761f1`.
+- Remaining follow-up: keep `firstNonEmpty`, `formatCommandOutput`, and lifecycle paths untouched without a concrete bug; GitNexus reports those paths as HIGH impact or integration-heavy.
