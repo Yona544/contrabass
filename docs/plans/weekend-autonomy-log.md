@@ -170,3 +170,12 @@
 - Tests run: `go test ./internal/tui -run "TestProjectDetails|TestDisplayBoardScope|TestTruncateForHeader" -count=1 -v`, `go test ./internal/tui -count=1`, `go test ./... -count=1 -timeout=20m` (failed in existing `internal/agent` timing tests), `go test ./internal/agent -run "TestCodexRunner_HandshakeAndStreamTimeoutsIndependent|TestTimeoutKillsProcess|TestCodexRunner_ConcurrentStartStop|TestCodexRunner_HandshakeTimeout|TestOMXRunner_MissingTeamFailsFast" -count=1 -v`, `go test ./internal/agent -run "TestCodexRunner_HandshakeAndStreamTimeoutsIndependent/handshake_stalls" -count=1 -v`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`.
 - Commit hash: `4a311ea`.
 - Remaining follow-up: investigate `TestCodexRunner_HandshakeAndStreamTimeoutsIndependent/handshake_stalls`; it reproduced independently at about 2.7s against a `<2s` assertion, so the full suite is not green.
+
+## 2026-05-18 - Codex helper timeout test tolerance
+
+- Task selected: relax Codex helper-process timeout ceiling in handshake timeout tests after reproducing the full-suite blocker.
+- Why it was valuable: the failing tests were test-only LOW impact, and Windows helper startup/cleanup latency could exceed the old fixed 2s ceiling while still returning the expected handshake timeout.
+- Files changed: `internal/agent/codex_test.go`.
+- Tests run: `go test ./internal/agent -run "TestCodexRunner_HandshakeAndStreamTimeoutsIndependent/handshake_stalls" -count=1 -v` (red before fix), `go test ./internal/agent -run "TestCodexRunner_HandshakeAndStreamTimeoutsIndependent/handshake_stalls|TestCodexRunner_HandshakeTimeout" -count=1 -v`, `go test ./internal/agent -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`.
+- Commit hash: `e041c50`.
+- Remaining follow-up: keep production Codex lifecycle code untouched unless a separate failing test identifies a runtime bug; this change only adjusts test tolerance.
