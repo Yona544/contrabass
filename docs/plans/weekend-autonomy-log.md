@@ -206,3 +206,12 @@
 - Tests run: `go test ./internal/tracker -run "TestParseDependencies|TestParseBlockedBy" -count=1 -v`, `go test ./internal/tracker -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`.
 - Commit hash: `4b20100`.
 - Remaining follow-up: keep dependency parser changes test-only unless a concrete malformed issue body exposes a production bug.
+
+## 2026-05-18 - TUI team display helper coverage
+
+- Task selected: add table-driven tests for team event, phase, color, and status glyph helpers.
+- Why it was valuable: these helpers drive deterministic team table/detail text, and GitNexus reported LOW impact limited to TUI rendering flows.
+- Files changed: `internal/tui/detail_view_test.go`, `internal/tui/team_table_test.go`.
+- Tests run: `go test ./internal/tui -run "TestCompactTeamEvent|TestCompactTeamPhase|TestTeamPhaseColor|TestTeamStatusGlyph" -count=1 -v`, `go test ./internal/tui -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`.
+- Commit hash: `ac985a1`.
+- Remaining follow-up: consider deterministic `DetailView.RenderTeam` output assertions only if they stay ANSI-normalized and low impact.
