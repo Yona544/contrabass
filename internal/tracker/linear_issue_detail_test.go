@@ -99,3 +99,267 @@ func TestLinearClient_FetchIssueDetail_NotFound(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "issue missing not found")
 }
+
+func TestLinearUserSummary(t *testing.T) {
+	tests := []struct {
+		name  string
+		input interface{}
+		want  *LinearUserSummary
+	}{
+		{
+			name:  "nil value",
+			input: nil,
+		},
+		{
+			name:  "wrong type",
+			input: "user-1",
+		},
+		{
+			name:  "missing id",
+			input: map[string]interface{}{"name": "Ada", "displayName": "Ada Lovelace"},
+		},
+		{
+			name: "extracts user fields",
+			input: map[string]interface{}{
+				"id":          "user-1",
+				"name":        "Ada",
+				"displayName": "Ada Lovelace",
+			},
+			want: &LinearUserSummary{
+				ID:          "user-1",
+				Name:        "Ada",
+				DisplayName: "Ada Lovelace",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, linearUserSummary(tt.input))
+		})
+	}
+}
+
+func TestLinearNamedRef(t *testing.T) {
+	tests := []struct {
+		name  string
+		input interface{}
+		want  *LinearNamedRef
+	}{
+		{
+			name:  "nil value",
+			input: nil,
+		},
+		{
+			name:  "wrong type",
+			input: 42,
+		},
+		{
+			name:  "missing id",
+			input: map[string]interface{}{"key": "ENG", "name": "Engineering"},
+		},
+		{
+			name: "extracts reference fields",
+			input: map[string]interface{}{
+				"id":   "team-1",
+				"key":  "ENG",
+				"name": "Engineering",
+				"url":  "https://linear.app/acme/team/ENG",
+			},
+			want: &LinearNamedRef{
+				ID:   "team-1",
+				Key:  "ENG",
+				Name: "Engineering",
+				URL:  "https://linear.app/acme/team/ENG",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, linearNamedRef(tt.input))
+		})
+	}
+}
+
+func TestLinearCycleSummary(t *testing.T) {
+	tests := []struct {
+		name  string
+		input interface{}
+		want  *LinearCycleSummary
+	}{
+		{
+			name:  "nil value",
+			input: nil,
+		},
+		{
+			name:  "wrong type",
+			input: []interface{}{"cycle-1"},
+		},
+		{
+			name:  "missing id",
+			input: map[string]interface{}{"name": "May"},
+		},
+		{
+			name: "extracts cycle fields",
+			input: map[string]interface{}{
+				"id":       "cycle-1",
+				"name":     "May",
+				"number":   7.0,
+				"startsAt": "2026-05-01",
+				"endsAt":   "2026-05-15",
+			},
+			want: &LinearCycleSummary{
+				ID:       "cycle-1",
+				Name:     "May",
+				Number:   7,
+				StartsAt: "2026-05-01",
+				EndsAt:   "2026-05-15",
+			},
+		},
+		{
+			name: "ignores non-json numeric cycle number",
+			input: map[string]interface{}{
+				"id":     "cycle-2",
+				"name":   "June",
+				"number": 8,
+			},
+			want: &LinearCycleSummary{
+				ID:   "cycle-2",
+				Name: "June",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, linearCycleSummary(tt.input))
+		})
+	}
+}
+
+func TestLinearOptionalFloat(t *testing.T) {
+	tests := []struct {
+		name  string
+		input interface{}
+		want  *float64
+	}{
+		{name: "nil value", input: nil},
+		{name: "string value", input: "3"},
+		{name: "float64 value", input: 2.5, want: ptrFloat64(2.5)},
+		{name: "int value", input: 3, want: ptrFloat64(3)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := linearOptionalFloat(tt.input)
+			if tt.want == nil {
+				assert.Nil(t, got)
+				return
+			}
+			require.NotNil(t, got)
+			assert.Equal(t, *tt.want, *got)
+		})
+	}
+}
+
+func TestLinearRelationSummaries(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  map[string]interface{}
+		want []LinearRelationSummary
+	}{
+		{
+			name: "missing containers returns empty slice",
+			raw:  map[string]interface{}{},
+			want: []LinearRelationSummary{},
+		},
+		{
+			name: "skips malformed relation nodes",
+			raw: map[string]interface{}{
+				"relations": map[string]interface{}{
+					"nodes": []interface{}{
+						"bad",
+						map[string]interface{}{"type": "blocks"},
+					},
+				},
+			},
+			want: []LinearRelationSummary{},
+		},
+		{
+			name: "prefers related issue and falls back to issue",
+			raw: map[string]interface{}{
+				"relations": map[string]interface{}{
+					"nodes": []interface{}{
+						map[string]interface{}{
+							"type": "blocks",
+							"relatedIssue": map[string]interface{}{
+								"id":         "issue-2",
+								"identifier": "ENG-2",
+								"title":      "Related",
+								"url":        "https://linear.app/acme/issue/ENG-2",
+								"state":      map[string]interface{}{"name": "Todo", "type": "unstarted"},
+							},
+							"issue": map[string]interface{}{
+								"id":         "issue-ignored",
+								"identifier": "ENG-0",
+							},
+						},
+					},
+				},
+				"inverseRelations": map[string]interface{}{
+					"nodes": []interface{}{
+						map[string]interface{}{
+							"type": "blocked_by",
+							"issue": map[string]interface{}{
+								"id":         "issue-1",
+								"identifier": "ENG-1",
+								"title":      "Parent",
+								"url":        "https://linear.app/acme/issue/ENG-1",
+								"state":      map[string]interface{}{"name": "Done", "type": "completed"},
+							},
+						},
+					},
+				},
+			},
+			want: []LinearRelationSummary{
+				{
+					Type:      "blocks",
+					Direction: "outbound",
+					Issue: LinearRelatedIssueSummary{
+						ID:         "issue-2",
+						Identifier: "ENG-2",
+						Title:      "Related",
+						URL:        "https://linear.app/acme/issue/ENG-2",
+						State:      "Todo",
+						StateType:  "unstarted",
+					},
+				},
+				{
+					Type:      "blocked_by",
+					Direction: "inverse",
+					Issue: LinearRelatedIssueSummary{
+						ID:         "issue-1",
+						Identifier: "ENG-1",
+						Title:      "Parent",
+						URL:        "https://linear.app/acme/issue/ENG-1",
+						State:      "Done",
+						StateType:  "completed",
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := linearRelationSummaries(tt.raw)
+			assert.Equal(t, tt.want, got)
+			assert.NotNil(t, got)
+		})
+	}
+}
+
+func ptrFloat64(v float64) *float64 {
+	return &v
+}
