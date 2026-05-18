@@ -44,6 +44,58 @@ func TestParseLocalBoardState(t *testing.T) {
 	}
 }
 
+func TestNormalizeLocalTeamName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "trims and lowercases", input: " Team Alpha ", want: "team-alpha"},
+		{name: "collapses punctuation", input: "Team__Alpha!!Blue", want: "team-alpha-blue"},
+		{name: "keeps digits", input: "OPS 123 / A", want: "ops-123-a"},
+		{name: "empty after sanitizing", input: " --- ", want: ""},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tt.want, normalizeLocalTeamName(tt.input))
+		})
+	}
+}
+
+func TestIssueMatchesTeam(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		assignee string
+		teamName string
+		want     bool
+	}{
+		{name: "unassigned issue matches any team", teamName: "team-alpha", want: true},
+		{name: "exact assignee match", assignee: "team-alpha", teamName: "team-alpha", want: true},
+		{name: "normalized assignee match", assignee: "Team Alpha", teamName: "team-alpha", want: true},
+		{name: "normalized team name match", assignee: "team-alpha", teamName: "Team Alpha", want: true},
+		{name: "different team does not match", assignee: "team-alpha", teamName: "team-beta", want: false},
+		{name: "assigned issue does not match blank team", assignee: "team-alpha", teamName: "", want: false},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			issue := LocalBoardIssue{Assignee: tt.assignee}
+			assert.Equal(t, tt.want, issueMatchesTeam(issue, tt.teamName))
+		})
+	}
+}
+
 func TestLocalTrackerLifecycle(t *testing.T) {
 	t.Parallel()
 
