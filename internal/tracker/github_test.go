@@ -293,6 +293,54 @@ func TestGitHubFetchIssues_HTTPErrors(t *testing.T) {
 	}
 }
 
+func TestParseGitHubRateLimitReset(t *testing.T) {
+	t.Parallel()
+
+	resetHeader := func(value string) http.Header {
+		header := http.Header{}
+		header.Set("X-RateLimit-Reset", value)
+		return header
+	}
+
+	tests := []struct {
+		name     string
+		header   http.Header
+		wantZero bool
+	}{
+		{name: "missing reset header", header: http.Header{}, wantZero: true},
+		{
+			name:     "invalid reset header",
+			header:   resetHeader("not-a-unix-time"),
+			wantZero: true,
+		},
+		{
+			name:     "past reset header",
+			header:   resetHeader(strconv.FormatInt(time.Now().Add(-time.Minute).Unix(), 10)),
+			wantZero: true,
+		},
+		{
+			name:   "future reset header",
+			header: resetHeader(strconv.FormatInt(time.Now().Add(30*time.Second).Unix(), 10)),
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := parseGitHubRateLimitReset(tt.header)
+			if tt.wantZero {
+				assert.Zero(t, got)
+				return
+			}
+
+			assert.Greater(t, got, time.Duration(0))
+			assert.LessOrEqual(t, got, time.Minute)
+		})
+	}
+}
+
 func TestGitHubFetchIssues_LabelsFilter(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "bug,p0", r.URL.Query().Get("labels"))
