@@ -152,3 +152,12 @@
 - Tests run: `go test ./internal/tracker -run "TestNormalizeLocalTeamName|TestIssueMatchesTeam" -count=1 -v`, `go test ./internal/tracker -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`.
 - Commit hash: `a8a0ce3`.
 - Remaining follow-up: skip `sanitizeLocalIssuePrefix` without a concrete bug; GitNexus reported HIGH impact because it feeds `NewLocalTracker` and board/team startup flows.
+
+## 2026-05-18 - workspace resolved path helper coverage
+
+- Task selected: add table-driven tests for `resolvedAbs`.
+- Why it was valuable: the helper normalizes git worktree paths before registration checks, and GitNexus reported LOW impact with zero affected processes.
+- Files changed: `internal/workspace/manager_test.go`.
+- Tests run: `go test ./internal/workspace -run TestResolvedAbs -count=1 -v`, `go test ./internal/workspace -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`.
+- Commit hash: `7f64db3`.
+- Remaining follow-up: avoid broader workspace lifecycle edits unless backed by a concrete failing test; those paths are slower and more integration-heavy.
