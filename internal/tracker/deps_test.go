@@ -58,9 +58,29 @@ func TestParseDependencies(t *testing.T) {
 			want: []string{"5", "6"},
 		},
 		{
+			name: "deduplicates on same line",
+			body: "Depends on: #5, #5, #6",
+			want: []string{"5", "6"},
+		},
+		{
 			name: "case insensitive",
 			body: "BLOCKED BY: #11\nDEPENDS ON: #12\nREQUIRES: #13",
 			want: []string{"11", "12", "13"},
+		},
+		{
+			name: "markdown checklist dependency line",
+			body: "- [ ] Blocked by: #21 and #22 before starting",
+			want: []string{"21", "22"},
+		},
+		{
+			name: "ignores later issue references",
+			body: "Blocked by: #30\nLater mention #31 is not a dependency",
+			want: []string{"30"},
+		},
+		{
+			name: "ignores non dependency issue lines",
+			body: "Blocks: #40",
+			want: []string{},
 		},
 	}
 
@@ -97,6 +117,16 @@ func TestParseBlockedBy(t *testing.T) {
 			name: "no dependencies",
 			body: "No dependencies here",
 			want: []int{},
+		},
+		{
+			name: "deduplicates repeated refs",
+			body: "Blocked by: #4, #4, #5",
+			want: []int{4, 5},
+		},
+		{
+			name: "ignores later issue references",
+			body: "Blocked by: #30\nLater mention #31 is not a dependency",
+			want: []int{30},
 		},
 	}
 
