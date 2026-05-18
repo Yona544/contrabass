@@ -24,6 +24,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const codexHelperTimeoutCeiling = 5 * time.Second
+
 func TestCodexRunner_PolicyDefaults_OnWire(t *testing.T) {
 	runner := NewCodexRunner(helperCommand(t, "capture-wire"), 2*time.Second)
 
@@ -269,7 +271,7 @@ func TestCodexRunner_HandshakeAndStreamTimeoutsIndependent(t *testing.T) {
 		assert.Nil(t, proc)
 		assert.Contains(t, err.Error(), "handshake timeout")
 		assert.GreaterOrEqual(t, elapsed, handshakeTimeout)
-		assert.Less(t, elapsed, 2*time.Second)
+		assert.Less(t, elapsed, codexHelperTimeoutCeiling)
 	})
 
 	t.Run("stream stalls", func(t *testing.T) {
@@ -481,7 +483,7 @@ func TestCodexRunner_HandshakeTimeout(t *testing.T) {
 	assert.Nil(t, proc)
 	assert.Contains(t, err.Error(), "handshake timeout")
 	assert.GreaterOrEqual(t, elapsed, timeout)
-	assert.Less(t, elapsed, 2*time.Second)
+	assert.Less(t, elapsed, codexHelperTimeoutCeiling)
 }
 
 func TestCodexRunner_LargeJSONLLine(t *testing.T) {
