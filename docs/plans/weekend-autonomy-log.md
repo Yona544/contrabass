@@ -197,3 +197,12 @@
 - Tests run: `go test ./internal/tracker -run "TestLinearUserSummary|TestLinearNamedRef|TestLinearCycleSummary|TestLinearOptionalFloat|TestLinearRelationSummaries" -count=1 -v`, `go test ./internal/tracker -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`.
 - Commit hash: `a7d412d`.
 - Remaining follow-up: continue with pure tracker parser/helper tests after LOW/MEDIUM GitNexus checks; avoid lifecycle and network behavior changes without a concrete failing case.
+
+## 2026-05-18 - dependency parser edge coverage
+
+- Task selected: add dependency parser tests for duplicate refs, markdown checklist lines, and ignoring later non-dependency references.
+- Why it was valuable: GitHub issue normalization depends on these parsed dependency IDs, and GitNexus reported LOW impact with zero affected execution flows.
+- Files changed: `internal/tracker/deps_test.go`.
+- Tests run: `go test ./internal/tracker -run "TestParseDependencies|TestParseBlockedBy" -count=1 -v`, `go test ./internal/tracker -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`.
+- Commit hash: `4b20100`.
+- Remaining follow-up: keep dependency parser changes test-only unless a concrete malformed issue body exposes a production bug.
