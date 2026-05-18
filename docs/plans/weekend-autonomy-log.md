@@ -215,3 +215,12 @@
 - Tests run: `go test ./internal/tui -run "TestCompactTeamEvent|TestCompactTeamPhase|TestTeamPhaseColor|TestTeamStatusGlyph" -count=1 -v`, `go test ./internal/tui -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`.
 - Commit hash: `ac985a1`.
 - Remaining follow-up: consider deterministic `DetailView.RenderTeam` output assertions only if they stay ANSI-normalized and low impact.
+
+## 2026-05-18 - TUI team event data helper coverage
+
+- Task selected: add table-driven tests for terminal team phase detection and team event data conversions.
+- Why it was valuable: team events arrive with loosely typed JSON-like data, and GitNexus reported LOW impact through `applyTeamEvent` and `Update`.
+- Files changed: `internal/tui/model_test.go`.
+- Tests run: `go test ./internal/tui -run "TestIsTerminalTeamPhase|TestStringFromEventData|TestIntFromEventData" -count=1 -v` (first build failed due incorrect test constant names, then passed), `go test ./internal/tui -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`.
+- Commit hash: `4b18ed8`.
+- Remaining follow-up: keep broader TUI `Update` behavior changes tied to concrete event-flow failures.
