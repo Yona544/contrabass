@@ -161,3 +161,12 @@
 - Tests run: `go test ./internal/workspace -run TestResolvedAbs -count=1 -v`, `go test ./internal/workspace -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`.
 - Commit hash: `7f64db3`.
 - Remaining follow-up: avoid broader workspace lifecycle edits unless backed by a concrete failing test; those paths are slower and more integration-heavy.
+
+## 2026-05-18 - TUI header helper coverage
+
+- Task selected: add table-driven tests for `projectDetails`, `displayBoardScope`, and `truncateForHeader`.
+- Why it was valuable: these helpers shape deterministic header text for tracker scope and board display, and GitNexus reported LOW impact.
+- Files changed: `internal/tui/header_test.go`.
+- Tests run: `go test ./internal/tui -run "TestProjectDetails|TestDisplayBoardScope|TestTruncateForHeader" -count=1 -v`, `go test ./internal/tui -count=1`, `go test ./... -count=1 -timeout=20m` (failed in existing `internal/agent` timing tests), `go test ./internal/agent -run "TestCodexRunner_HandshakeAndStreamTimeoutsIndependent|TestTimeoutKillsProcess|TestCodexRunner_ConcurrentStartStop|TestCodexRunner_HandshakeTimeout|TestOMXRunner_MissingTeamFailsFast" -count=1 -v`, `go test ./internal/agent -run "TestCodexRunner_HandshakeAndStreamTimeoutsIndependent/handshake_stalls" -count=1 -v`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`.
+- Commit hash: `4a311ea`.
+- Remaining follow-up: investigate `TestCodexRunner_HandshakeAndStreamTimeoutsIndependent/handshake_stalls`; it reproduced independently at about 2.7s against a `<2s` assertion, so the full suite is not green.
