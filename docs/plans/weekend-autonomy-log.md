@@ -188,3 +188,12 @@
 - Tests run: `go test ./internal/tracker -run TestParseGitHubRateLimitReset -count=1 -v` (red once due non-canonical test header setup, green after using `Header.Set`), `go test ./internal/tracker -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`.
 - Commit hash: `6637f65`.
 - Remaining follow-up: keep direct GitHub network/client behavior changes scoped to concrete failures; this task only pins parser branches.
+
+## 2026-05-18 - Linear issue detail helper coverage
+
+- Task selected: add table-driven tests for Linear issue detail normalization helpers.
+- Why it was valuable: these helpers shape rich dashboard metadata from Linear responses, and GitNexus reported LOW impact limited to `FetchIssueDetail`.
+- Files changed: `internal/tracker/linear_issue_detail_test.go`.
+- Tests run: `go test ./internal/tracker -run "TestLinearUserSummary|TestLinearNamedRef|TestLinearCycleSummary|TestLinearOptionalFloat|TestLinearRelationSummaries" -count=1 -v`, `go test ./internal/tracker -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`.
+- Commit hash: `a7d412d`.
+- Remaining follow-up: continue with pure tracker parser/helper tests after LOW/MEDIUM GitNexus checks; avoid lifecycle and network behavior changes without a concrete failing case.
