@@ -643,6 +643,77 @@ func TestDurationString_Negative(t *testing.T) {
 	}
 }
 
+func TestIsTerminalTeamPhase(t *testing.T) {
+	tests := []struct {
+		name  string
+		phase string
+		want  bool
+	}{
+		{name: "complete", phase: string(types.PhaseComplete), want: true},
+		{name: "failed", phase: string(types.PhaseFailed), want: true},
+		{name: "cancelled", phase: string(types.PhaseCancelled), want: true},
+		{name: "plan", phase: string(types.PhasePlan), want: false},
+		{name: "exec", phase: string(types.PhaseExec), want: false},
+		{name: "unknown", phase: "queued", want: false},
+		{name: "empty", phase: "", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, isTerminalTeamPhase(tt.phase))
+		})
+	}
+}
+
+func TestStringFromEventData(t *testing.T) {
+	tests := []struct {
+		name   string
+		values map[string]interface{}
+		key    string
+		want   string
+	}{
+		{name: "nil map", values: nil, key: "task_id", want: ""},
+		{name: "missing key", values: map[string]interface{}{}, key: "task_id", want: ""},
+		{name: "string value", values: map[string]interface{}{"task_id": "task-1"}, key: "task_id", want: "task-1"},
+		{name: "integer value", values: map[string]interface{}{"attempt": 2}, key: "attempt", want: "2"},
+		{name: "bool value", values: map[string]interface{}{"done": true}, key: "done", want: "true"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, stringFromEventData(tt.values, tt.key))
+		})
+	}
+}
+
+func TestIntFromEventData(t *testing.T) {
+	tests := []struct {
+		name   string
+		values map[string]interface{}
+		key    string
+		want   int
+		wantOK bool
+	}{
+		{name: "nil map", values: nil, key: "count", wantOK: false},
+		{name: "missing key", values: map[string]interface{}{}, key: "count", wantOK: false},
+		{name: "int value", values: map[string]interface{}{"count": 2}, key: "count", want: 2, wantOK: true},
+		{name: "int32 value", values: map[string]interface{}{"count": int32(3)}, key: "count", want: 3, wantOK: true},
+		{name: "int64 value", values: map[string]interface{}{"count": int64(4)}, key: "count", want: 4, wantOK: true},
+		{name: "float32 value", values: map[string]interface{}{"count": float32(5.8)}, key: "count", want: 5, wantOK: true},
+		{name: "float64 value", values: map[string]interface{}{"count": 6.9}, key: "count", want: 6, wantOK: true},
+		{name: "string value", values: map[string]interface{}{"count": "7"}, key: "count", wantOK: false},
+		{name: "bool value", values: map[string]interface{}{"count": true}, key: "count", wantOK: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := intFromEventData(tt.values, tt.key)
+			assert.Equal(t, tt.wantOK, ok)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 // TestStartEventBridge_NilInputs verifies that StartEventBridge handles
 // various nil input combinations gracefully without panicking.
 func TestStartEventBridge_NilInputs(t *testing.T) {
