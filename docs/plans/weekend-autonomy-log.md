@@ -143,3 +143,12 @@
 - Tests run: `go test ./internal/agent -run 'TestBuildTeamTaskSeed|TestSummarizePhase|TestPrimaryTask|TestMustJSONMap|TestOpenCodeEventPayloadSessionID|TestOpenCodeEventPayloadIdle|TestExtractListeningURL|TestExtractNestedString' -count=1 -v`, `go test ./internal/agent -coverprofile $p -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`.
 - Commit hash: `e3761f1`.
 - Remaining follow-up: keep `firstNonEmpty`, `formatCommandOutput`, and lifecycle paths untouched without a concrete bug; GitNexus reports those paths as HIGH impact or integration-heavy.
+
+## 2026-05-18 - local team matching helper coverage
+
+- Task selected: add table-driven tests for `normalizeLocalTeamName` and `issueMatchesTeam`.
+- Why it was valuable: these helpers control local board team dispatch matching, and GitNexus reported LOW impact while related lifecycle tests only covered the behavior indirectly.
+- Files changed: `internal/tracker/local_test.go`.
+- Tests run: `go test ./internal/tracker -run "TestNormalizeLocalTeamName|TestIssueMatchesTeam" -count=1 -v`, `go test ./internal/tracker -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`.
+- Commit hash: `a8a0ce3`.
+- Remaining follow-up: skip `sanitizeLocalIssuePrefix` without a concrete bug; GitNexus reported HIGH impact because it feeds `NewLocalTracker` and board/team startup flows.
