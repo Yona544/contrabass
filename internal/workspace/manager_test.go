@@ -415,6 +415,39 @@ func dirExists(path string) bool {
 	return err == nil && info.IsDir()
 }
 
+func TestResolvedAbs(t *testing.T) {
+	t.Parallel()
+
+	existingDir := t.TempDir()
+	missingPath := filepath.Join(t.TempDir(), "missing", "workspace")
+
+	existingAbs, err := filepath.Abs(existingDir)
+	require.NoError(t, err)
+	existingResolved, err := filepath.EvalSymlinks(existingAbs)
+	require.NoError(t, err)
+
+	missingAbs, err := filepath.Abs(missingPath)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name string
+		path string
+		want string
+	}{
+		{name: "resolves existing path", path: existingDir, want: existingResolved},
+		{name: "falls back to absolute missing path", path: missingPath, want: missingAbs},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tt.want, resolvedAbs(tt.path))
+		})
+	}
+}
+
 func TestManager_CreateRegistersWorktree(t *testing.T) {
 	t.Parallel()
 
