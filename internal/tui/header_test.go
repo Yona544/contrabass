@@ -171,6 +171,97 @@ func TestHeaderViewShowsRemoteTrackerScope(t *testing.T) {
 	assert.Contains(t, out, "URL:")
 }
 
+func TestProjectDetails(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		raw       string
+		wantScope string
+		wantFull  string
+	}{
+		{name: "empty", raw: "", wantScope: "-", wantFull: "-"},
+		{name: "plain scope", raw: "local-board", wantScope: "local-board", wantFull: "local-board"},
+		{
+			name:      "linear project path",
+			raw:       "https://linear.app/acme/project/roadmap/issues",
+			wantScope: "acme/roadmap",
+			wantFull:  "linear.app/acme/project/roadmap/issues",
+		},
+		{
+			name:      "project path without org",
+			raw:       "https://example.com/project/local-board",
+			wantScope: "local-board",
+			wantFull:  "example.com/project/local-board",
+		},
+		{
+			name:      "generic two segment path",
+			raw:       "https://github.com/junhoyeo/contrabass/issues",
+			wantScope: "junhoyeo/contrabass",
+			wantFull:  "github.com/junhoyeo/contrabass/issues",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			gotScope, gotFull := projectDetails(tt.raw)
+			assert.Equal(t, tt.wantScope, gotScope)
+			assert.Equal(t, tt.wantFull, gotFull)
+		})
+	}
+}
+
+func TestDisplayBoardScope(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{name: "empty", raw: "", want: "-"},
+		{name: "whitespace only", raw: " \t ", want: "-"},
+		{name: "trims scope", raw: " .contrabass/board ", want: ".contrabass/board"},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tt.want, displayBoardScope(tt.raw))
+		})
+	}
+}
+
+func TestTruncateForHeader(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		text string
+		max  int
+		want string
+	}{
+		{name: "short text unchanged", text: "abc", max: 10, want: "abc"},
+		{name: "exact length unchanged", text: "abcdef", max: 6, want: "abcdef"},
+		{name: "truncates with ellipsis", text: "abcdef", max: 5, want: "ab..."},
+		{name: "tiny max unchanged", text: "abcdef", max: 3, want: "abcdef"},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tt.want, truncateForHeader(tt.text, tt.max))
+		})
+	}
+}
+
 func loadTestImage(t *testing.T) image.Image {
 	t.Helper()
 	f, err := os.Open(filepath.Join("..", "..", ".github", "assets", "contrabass.png"))
