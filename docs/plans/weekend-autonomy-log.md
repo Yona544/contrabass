@@ -179,3 +179,12 @@
 - Tests run: `go test ./internal/agent -run "TestCodexRunner_HandshakeAndStreamTimeoutsIndependent/handshake_stalls" -count=1 -v` (red before fix), `go test ./internal/agent -run "TestCodexRunner_HandshakeAndStreamTimeoutsIndependent/handshake_stalls|TestCodexRunner_HandshakeTimeout" -count=1 -v`, `go test ./internal/agent -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`.
 - Commit hash: `e041c50`.
 - Remaining follow-up: keep production Codex lifecycle code untouched unless a separate failing test identifies a runtime bug; this change only adjusts test tolerance.
+
+## 2026-05-18 - GitHub rate-limit reset helper coverage
+
+- Task selected: add table-driven tests for `parseGitHubRateLimitReset`.
+- Why it was valuable: GitHub secondary rate-limit handling depends on this parser, and GitNexus reported LOW impact with zero affected processes.
+- Files changed: `internal/tracker/github_test.go`.
+- Tests run: `go test ./internal/tracker -run TestParseGitHubRateLimitReset -count=1 -v` (red once due non-canonical test header setup, green after using `Header.Set`), `go test ./internal/tracker -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`.
+- Commit hash: `6637f65`.
+- Remaining follow-up: keep direct GitHub network/client behavior changes scoped to concrete failures; this task only pins parser branches.
