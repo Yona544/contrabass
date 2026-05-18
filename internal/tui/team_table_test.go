@@ -37,3 +37,73 @@ func TestTeamTableBuildRowsTracksFlattenedTeamRows(t *testing.T) {
 	assert.Contains(t, rows[2][1], "└─")
 	assert.Contains(t, rows[4][1], "└─")
 }
+
+func TestCompactTeamPhase(t *testing.T) {
+	tests := []struct {
+		name  string
+		phase string
+		want  string
+	}{
+		{name: "plan", phase: "team-plan", want: "Plan"},
+		{name: "prd", phase: "team-prd", want: "PRD"},
+		{name: "exec", phase: "team-exec", want: "Exec"},
+		{name: "verify", phase: "team-verify", want: "Verify"},
+		{name: "fix", phase: "team-fix", want: "Fix"},
+		{name: "complete", phase: "complete", want: "Done"},
+		{name: "failed", phase: "failed", want: "Failed"},
+		{name: "cancelled", phase: "cancelled", want: "Cancel"},
+		{name: "unknown short", phase: "queued", want: "queued"},
+		{name: "unknown long", phase: "team-reviewing", want: "team-rev"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, compactTeamPhase(tt.phase))
+		})
+	}
+}
+
+func TestTeamPhaseColor(t *testing.T) {
+	tests := []struct {
+		name  string
+		phase string
+		want  string
+	}{
+		{name: "plan", phase: "team-plan", want: "33"},
+		{name: "prd", phase: "team-prd", want: "33"},
+		{name: "exec", phase: "team-exec", want: "5"},
+		{name: "verify", phase: "team-verify", want: "42"},
+		{name: "fix", phase: "team-fix", want: "3"},
+		{name: "complete", phase: "complete", want: "42"},
+		{name: "failed", phase: "failed", want: "1"},
+		{name: "cancelled", phase: "cancelled", want: "1"},
+		{name: "unknown", phase: "queued", want: "7"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, teamPhaseColor(tt.phase))
+		})
+	}
+}
+
+func TestTeamStatusGlyph(t *testing.T) {
+	tests := []struct {
+		name        string
+		phase       string
+		spinnerView string
+		want        string
+	}{
+		{name: "active phase uses spinner", phase: "team-exec", spinnerView: "spin", want: "spin"},
+		{name: "fix phase uses spinner", phase: "team-fix", spinnerView: "spin", want: "spin"},
+		{name: "complete phase uses dot", phase: "complete", spinnerView: "spin", want: "●"},
+		{name: "failed phase uses dot", phase: "failed", spinnerView: "spin", want: "●"},
+		{name: "unknown phase uses dot", phase: "queued", spinnerView: "spin", want: "●"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, teamStatusGlyph(tt.phase, tt.spinnerView))
+		})
+	}
+}
