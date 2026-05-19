@@ -246,3 +246,14 @@
 - GitNexus impact summary: `DetailView.RenderAgent` was LOW risk with 1 direct caller (`Model.renderDetailContent`), 2 affected TUI processes (`Update`, `syncTables`), and 1 affected module.
 - Skipped high-risk alternatives: did not expand `compactEvent` helper coverage in this slice because GitNexus reported HIGH impact through both detail rendering and the agent table.
 - Remaining follow-up: consider `Backoff.View` truncation/rune rendering next; keep `compactEvent` changes tied to a concrete failing case.
+
+## 2026-05-19 - TUI backoff truncation coverage
+
+- Task selected: add `Backoff.View` narrow-width coverage and `truncateRunesWithEllipsis` boundary tests.
+- Why it was valuable: retry-backoff rows are width-sensitive TUI output, and the helper had no direct coverage for zero/negative limits, short limits, ellipsis behavior, or multi-rune input.
+- Files changed: `internal/tui/backoff_test.go`.
+- Tests run: `go test ./internal/tui -run "TestBackoffViewOmitsErrorWhenWidthLeavesNoRoom|TestTruncateRunesWithEllipsis" -count=1 -v`, `go test ./internal/tui -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`, `git diff --check`.
+- Commit hash: `2d8bec0`.
+- GitNexus impact summary: `Backoff.View` was LOW risk with 1 direct caller (`Model.syncTables`), 2 affected TUI processes (`Update`, `syncTables`), and 1 affected module; `truncateRunesWithEllipsis` was LOW risk with 1 direct caller and the same TUI process reach.
+- Skipped high-risk alternatives: none in this slice.
+- Remaining follow-up: re-rank after three code/test slices; likely next candidates are pure tracker or config helpers unless TUI coverage still has a clearly deterministic gap.
