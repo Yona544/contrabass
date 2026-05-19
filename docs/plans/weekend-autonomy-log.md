@@ -433,3 +433,14 @@
 - GitNexus impact summary: `handleUpdateBoardIssue` was LOW risk with no indexed upstream impact, no affected processes, and no affected modules.
 - Skipped high-risk alternatives: avoided changing board handler behavior and broader board lifecycle paths.
 - Remaining follow-up: remaining web candidates are now mostly lower-value direct tests; stop unless a stronger caller-facing gap appears.
+
+## 2026-05-19 - Invalid latest release JSON coverage
+
+- Task selected: add malformed GitHub release JSON coverage for `FetchLatestVersion`.
+- Why it was valuable: update checks should surface malformed API responses as fetch errors, and existing tests covered success, HTTP errors, and cancellation but not decode failures.
+- Files changed: `internal/update/update_test.go`.
+- Tests run: `go test ./internal/update -run TestFetchLatestVersion -count=1 -v`, `go test ./internal/update -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`, `git diff --check`.
+- Commit hash: `6e574eb`.
+- GitNexus impact summary: `FetchLatestVersion` was LOW risk with 1 direct caller (`Check`), 2 affected processes (`main` and `Check`), and 2 affected modules.
+- Skipped high-risk alternatives: avoided broader update-check behavior changes and network-path rewrites.
+- Remaining follow-up: after this three-slice block, re-rank; remaining candidates are likely too small unless they cover caller-facing fallback behavior.
