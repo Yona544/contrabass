@@ -224,3 +224,14 @@
 - Tests run: `go test ./internal/tui -run "TestIsTerminalTeamPhase|TestStringFromEventData|TestIntFromEventData" -count=1 -v` (first build failed due incorrect test constant names, then passed), `go test ./internal/tui -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`.
 - Commit hash: `4b18ed8`.
 - Remaining follow-up: keep broader TUI `Update` behavior changes tied to concrete event-flow failures.
+
+## 2026-05-19 - TUI team detail rendering coverage
+
+- Task selected: add deterministic `DetailView.RenderTeam` output assertions.
+- Why it was valuable: recent TUI work covered helper-level behavior, but the composed team detail view still lacked stable coverage for the heading, board issue display, worker rows, failed task count, truncation, and event log text.
+- Files changed: `internal/tui/detail_view_test.go`.
+- Tests run: `go test ./internal/tui -run TestDetailViewRenderTeam -count=1 -v`, `go test ./internal/tui -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`, `git diff --check`.
+- Commit hash: `0c6338e`.
+- GitNexus impact summary: `DetailView.RenderTeam` was LOW risk with 1 direct caller (`Model.renderDetailContent`), 2 affected TUI processes (`Update`, `syncTables`), and 1 affected module; `compactTeamEvent` was LOW risk with 1 direct caller and 1 affected process.
+- Skipped high-risk alternatives: none in this slice.
+- Remaining follow-up: continue with deterministic TUI render tests only where assertions can stay ANSI-normalized and avoid spinner or timing state.
