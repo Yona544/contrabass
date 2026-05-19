@@ -44,6 +44,31 @@ func TestParseLocalBoardState(t *testing.T) {
 	}
 }
 
+func TestLocalBoardStateIssueState(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		state LocalBoardState
+		want  types.IssueState
+	}{
+		{name: "todo maps to unclaimed", state: LocalBoardStateTodo, want: types.Unclaimed},
+		{name: "in progress maps to running", state: LocalBoardStateInProgress, want: types.Running},
+		{name: "retry maps to retry queued", state: LocalBoardStateRetry, want: types.RetryQueued},
+		{name: "done maps to released", state: LocalBoardStateDone, want: types.Released},
+		{name: "unknown maps to unclaimed", state: LocalBoardState("blocked"), want: types.Unclaimed},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tt.want, tt.state.IssueState())
+		})
+	}
+}
+
 func TestNormalizeLocalTeamName(t *testing.T) {
 	t.Parallel()
 
