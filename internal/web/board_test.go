@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -244,6 +245,26 @@ func TestHandleUpdateBoardIssueNotFound(t *testing.T) {
 
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 	assert.Equal(t, "issue not found", readErrorMessage(t, rec))
+}
+
+func TestIsBoardIssueNotFound(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "nil", err: nil, want: false},
+		{name: "lowercase not found", err: errors.New("local board issue \"CB-1\" not found"), want: true},
+		{name: "mixed case not found", err: errors.New("Local Board Issue CB-1 Not Found"), want: true},
+		{name: "unrelated error", err: errors.New("permission denied"), want: false},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, isBoardIssueNotFound(tt.err))
+		})
+	}
 }
 
 type fakeBoardProvider struct {
