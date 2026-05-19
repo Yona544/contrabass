@@ -411,3 +411,14 @@
 - GitNexus impact summary: `handleGetIssueDetails` was LOW risk with no indexed upstream impact, no affected processes, and no affected modules.
 - Skipped high-risk alternatives: avoided changing issue-detail handler behavior and broader dashboard serving paths.
 - Remaining follow-up: remaining web candidates are either already covered or lower-value direct tests around internals; stop unless new failures identify a gap.
+
+## 2026-05-19 - Snapshot issue lookup coverage
+
+- Task selected: add table-driven direct coverage for `Server.issueFromSnapshot`.
+- Why it was valuable: issue detail and timeline endpoints rely on this helper to distinguish nil providers, missing issues, and stable snapshot issue lookups.
+- Files changed: `internal/web/issue_detail_test.go`.
+- Tests run: `go test ./internal/web -run TestIssueFromSnapshot -count=1 -v`, `go test ./internal/web -count=1`, `go test ./... -count=1 -timeout=20m` (first run hit unrelated timeout failures across multiple packages; representative failed tests passed narrowly, and a standard rerun passed), `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`, `git diff --check`.
+- Commit hash: `29cccb7`.
+- GitNexus impact summary: `issueFromSnapshot` was LOW risk with 2 direct handler callers (`handleGetIssueDetails`, `handleGetIssueTimeline`), 2 affected web processes, and 1 affected module.
+- Skipped high-risk alternatives: continued to skip `agent.IsHeartbeatEvent`; avoided broader dashboard serving paths.
+- Remaining follow-up: remaining candidates are mostly lower-value direct tests or already-covered behavior; stop soon unless a clearly caller-facing gap remains.
