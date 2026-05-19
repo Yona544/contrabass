@@ -400,3 +400,14 @@
 - GitNexus impact summary: `isBoardIssueNotFound` was LOW risk with 2 direct handler callers, 2 affected web processes, and 1 affected module.
 - Skipped high-risk alternatives: avoided broader board handler behavior changes and lifecycle paths.
 - Remaining follow-up: remaining candidate quality is low; stop after final verification unless a stronger deterministic helper appears.
+
+## 2026-05-19 - Issue detail provider error coverage
+
+- Task selected: add focused handler coverage for issue-detail provider errors.
+- Why it was valuable: the endpoint intentionally returns a 502 with the stable snapshot issue when rich provider detail fails, and this caller-facing fallback was not directly tested.
+- Files changed: `internal/web/issue_detail_test.go`.
+- Tests run: `go test ./internal/web -run TestHandleGetIssueDetails_ProviderError -count=1 -v`, `go test ./internal/web -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`, `git diff --check`.
+- Commit hash: `94060d7`.
+- GitNexus impact summary: `handleGetIssueDetails` was LOW risk with no indexed upstream impact, no affected processes, and no affected modules.
+- Skipped high-risk alternatives: avoided changing issue-detail handler behavior and broader dashboard serving paths.
+- Remaining follow-up: remaining web candidates are either already covered or lower-value direct tests around internals; stop unless new failures identify a gap.
