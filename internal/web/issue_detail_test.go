@@ -185,3 +185,49 @@ func TestHandleGetIssueTimeline_Error(t *testing.T) {
 	require.Equal(t, http.StatusInternalServerError, rec.Code)
 	assert.Equal(t, "read jsonl: permission denied", readErrorMessage(t, rec))
 }
+
+func TestIssueFromSnapshot(t *testing.T) {
+	tests := []struct {
+		name    string
+		server  *Server
+		issueID string
+		want    types.Issue
+		wantOK  bool
+	}{
+		{
+			name:    "nil snapshot provider",
+			server:  &Server{},
+			issueID: "issue-1",
+			wantOK:  false,
+		},
+		{
+			name:    "missing issue",
+			server:  issueDetailTestServer(),
+			issueID: "missing",
+			wantOK:  false,
+		},
+		{
+			name:    "found issue",
+			server:  issueDetailTestServer(),
+			issueID: "issue-1",
+			want: types.Issue{
+				ID:          "issue-1",
+				Identifier:  "ZII-1",
+				Title:       "Wire detail",
+				Description: "base snapshot copy",
+				URL:         "https://linear.app/acme/issue/ZII-1",
+				TrackerMeta: map[string]interface{}{"linear_state": "Todo"},
+			},
+			wantOK: true,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := tt.server.issueFromSnapshot(tt.issueID)
+			assert.Equal(t, tt.wantOK, ok)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
