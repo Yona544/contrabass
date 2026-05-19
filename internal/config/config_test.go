@@ -422,6 +422,53 @@ func TestWorkflowConfig_LinearSyncCommentsEffectiveMode(t *testing.T) {
 	assert.Equal(t, LinearSyncCommentsModeTopLevel, mode)
 }
 
+func TestWorkflowConfig_LinearSyncCommentsModeExplicit(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		cfg  *WorkflowConfig
+		want bool
+	}{
+		{name: "nil config is not explicit", cfg: nil},
+		{name: "empty mode is not explicit", cfg: &WorkflowConfig{}},
+		{
+			name: "whitespace mode is not explicit",
+			cfg: &WorkflowConfig{
+				Linear: LinearConfigSection{
+					SyncComments: LinearSyncCommentsConfig{Mode: " \t\n "},
+				},
+			},
+		},
+		{
+			name: "reply thread mode is explicit",
+			cfg: &WorkflowConfig{
+				Linear: LinearConfigSection{
+					SyncComments: LinearSyncCommentsConfig{Mode: LinearSyncCommentsModeReplyThread},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "top level mode is explicit",
+			cfg: &WorkflowConfig{
+				Linear: LinearConfigSection{
+					SyncComments: LinearSyncCommentsConfig{Mode: " top_level "},
+				},
+			},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, tt.cfg.LinearSyncCommentsModeExplicit())
+		})
+	}
+}
+
 func TestWorkflowConfig_TeamExecutionMode(t *testing.T) {
 	t.Parallel()
 
