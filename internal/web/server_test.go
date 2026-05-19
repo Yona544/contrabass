@@ -50,10 +50,10 @@ func TestServerRoutes(t *testing.T) {
 		},
 	}
 
-			s := &Server{snapshotProvider: provider, dashboardFS: nil}
-			h := s.newMux()
+	s := &Server{snapshotProvider: provider, dashboardFS: nil}
+	h := s.newMux()
 
-			tests := []struct {
+	tests := []struct {
 		name         string
 		method       string
 		target       string
@@ -154,9 +154,25 @@ func TestServerCORSPreflight(t *testing.T) {
 }
 
 func TestNormalizeListenAddr(t *testing.T) {
-	assert.Equal(t, defaultListenAddr, normalizeListenAddr(""))
-	assert.Equal(t, "localhost:9090", normalizeListenAddr(":9090"))
-	assert.Equal(t, "127.0.0.1:9090", normalizeListenAddr("127.0.0.1:9090"))
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "empty uses default", input: "", want: defaultListenAddr},
+		{name: "whitespace uses default", input: " \t\n ", want: defaultListenAddr},
+		{name: "port only binds localhost", input: ":9090", want: "localhost:9090"},
+		{name: "trimmed port only binds localhost", input: "  :9090  ", want: "localhost:9090"},
+		{name: "explicit host is preserved", input: "127.0.0.1:9090", want: "127.0.0.1:9090"},
+		{name: "trimmed explicit host is preserved", input: "  0.0.0.0:9090  ", want: "0.0.0.0:9090"},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, normalizeListenAddr(tt.input))
+		})
+	}
 }
 
 func TestPublishEvent(t *testing.T) {
