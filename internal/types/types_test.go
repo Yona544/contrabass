@@ -81,6 +81,56 @@ func TestRunPhaseLabel(t *testing.T) {
 	}
 }
 
+func TestTeamPhaseIsTerminal(t *testing.T) {
+	tests := []struct {
+		name  string
+		phase TeamPhase
+		want  bool
+	}{
+		{name: "plan is active", phase: PhasePlan, want: false},
+		{name: "prd is active", phase: PhasePRD, want: false},
+		{name: "exec is active", phase: PhaseExec, want: false},
+		{name: "verify is active", phase: PhaseVerify, want: false},
+		{name: "fix is active", phase: PhaseFix, want: false},
+		{name: "complete is terminal", phase: PhaseComplete, want: true},
+		{name: "failed is terminal", phase: PhaseFailed, want: true},
+		{name: "cancelled is terminal", phase: PhaseCancelled, want: true},
+		{name: "unknown is active", phase: TeamPhase("paused"), want: false},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tt.phase.IsTerminal())
+		})
+	}
+}
+
+func TestTeamPhaseValidTransitions(t *testing.T) {
+	tests := []struct {
+		name  string
+		phase TeamPhase
+		want  []TeamPhase
+	}{
+		{name: "plan", phase: PhasePlan, want: []TeamPhase{PhasePRD, PhaseCancelled}},
+		{name: "prd", phase: PhasePRD, want: []TeamPhase{PhaseExec, PhaseCancelled}},
+		{name: "exec", phase: PhaseExec, want: []TeamPhase{PhaseVerify, PhaseCancelled}},
+		{name: "verify", phase: PhaseVerify, want: []TeamPhase{PhaseFix, PhaseComplete, PhaseFailed, PhaseCancelled}},
+		{name: "fix", phase: PhaseFix, want: []TeamPhase{PhaseExec, PhaseVerify, PhaseComplete, PhaseFailed, PhaseCancelled}},
+		{name: "complete", phase: PhaseComplete, want: nil},
+		{name: "failed", phase: PhaseFailed, want: nil},
+		{name: "cancelled", phase: PhaseCancelled, want: nil},
+		{name: "unknown", phase: TeamPhase("paused"), want: nil},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tt.phase.ValidTransitions())
+		})
+	}
+}
+
 func TestIssueStateEnumContiguity(t *testing.T) {
 	// Verify that IssueState enum values are contiguous (no gaps)
 	expected := []IssueState{Unclaimed, Claimed, Running, RetryQueued, Released}
