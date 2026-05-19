@@ -139,6 +139,21 @@ func TestFetchLatestVersion(t *testing.T) {
 		require.Error(t, err)
 	})
 
+	t.Run("invalid json", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte("{"))
+		}))
+		defer server.Close()
+
+		orig := releasesURL
+		defer func() { setGitHubReleasesURL(orig) }()
+		setGitHubReleasesURL(server.URL)
+
+		_, err := FetchLatestVersion(context.Background())
+		require.Error(t, err)
+	})
+
 	t.Run("timeout", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
