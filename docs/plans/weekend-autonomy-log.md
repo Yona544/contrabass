@@ -235,3 +235,14 @@
 - GitNexus impact summary: `DetailView.RenderTeam` was LOW risk with 1 direct caller (`Model.renderDetailContent`), 2 affected TUI processes (`Update`, `syncTables`), and 1 affected module; `compactTeamEvent` was LOW risk with 1 direct caller and 1 affected process.
 - Skipped high-risk alternatives: none in this slice.
 - Remaining follow-up: continue with deterministic TUI render tests only where assertions can stay ANSI-normalized and avoid spinner or timing state.
+
+## 2026-05-19 - TUI agent detail rendering coverage
+
+- Task selected: add deterministic `DetailView.RenderAgent` output assertions.
+- Why it was valuable: agent detail rendering previously had only broad navigation assertions, so this pins the composed heading, stage, PID, age, token summary, turn, session, and event-log detail text without depending on ANSI styling.
+- Files changed: `internal/tui/detail_view_test.go`.
+- Tests run: `go test ./internal/tui -run TestDetailViewRenderAgent -count=1 -v`, `go test ./internal/tui -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`, `git diff --check`.
+- Commit hash: `6e0a0ff`.
+- GitNexus impact summary: `DetailView.RenderAgent` was LOW risk with 1 direct caller (`Model.renderDetailContent`), 2 affected TUI processes (`Update`, `syncTables`), and 1 affected module.
+- Skipped high-risk alternatives: did not expand `compactEvent` helper coverage in this slice because GitNexus reported HIGH impact through both detail rendering and the agent table.
+- Remaining follow-up: consider `Backoff.View` truncation/rune rendering next; keep `compactEvent` changes tied to a concrete failing case.
