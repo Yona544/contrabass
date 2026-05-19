@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/junhoyeo/contrabass/internal/types"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -83,5 +84,52 @@ func TestDetailViewRenderTeam(t *testing.T) {
 	}
 
 	assert.NotContains(t, rendered, longTask)
+	assert.False(t, strings.Contains(rendered, "\x1b["), "rendered output should be ANSI-normalized")
+}
+
+func TestDetailViewRenderAgent(t *testing.T) {
+	rendered := stripANSI(NewDetailView().SetWidth(72).RenderAgent(
+		AgentRow{
+			IssueID:   "ODO-7",
+			Stage:     types.StreamingTurn.String(),
+			PID:       9876,
+			Age:       "12s",
+			Turn:      4,
+			TokensIn:  1234,
+			TokensOut: 1500000,
+			SessionID: "sess-agent-1",
+			LastEvent: "item/completed",
+		},
+		[]EventLogEntry{
+			{
+				Timestamp: time.Date(2026, 5, 18, 10, 5, 7, 0, time.UTC),
+				Type:      "item/completed",
+				Detail:    "tool completed",
+			},
+		},
+	))
+
+	tests := []struct {
+		name string
+		want string
+	}{
+		{name: "agent heading", want: "AGENT  ODO-7"},
+		{name: "stage", want: "Stage: Turn"},
+		{name: "pid", want: "PID: 9876"},
+		{name: "age", want: "Age: 12s"},
+		{name: "tokens", want: "Tokens: 1.2k/1.5M"},
+		{name: "turn", want: "Turn: 4"},
+		{name: "session", want: "Session: sess-agent-1"},
+		{name: "event log section", want: "EVENT LOG"},
+		{name: "event timestamp", want: "10:05:07"},
+		{name: "event detail", want: "tool completed"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Contains(t, rendered, tt.want)
+		})
+	}
+
 	assert.False(t, strings.Contains(rendered, "\x1b["), "rendered output should be ANSI-normalized")
 }
