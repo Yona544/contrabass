@@ -268,3 +268,14 @@
 - GitNexus impact summary: `StartTeamEventBridge` was LOW risk with no direct indexed callers and no affected processes; context still showed `cmd/contrabass/team_root.go` as an incoming file reference.
 - Skipped high-risk alternatives: skipped expanding `compactEvent`; GitNexus previously reported HIGH impact through both detail rendering and the agent table.
 - Remaining follow-up: selection-boundary helpers are the next viable TUI candidate, but they are lower value than the four completed slices.
+
+## 2026-05-19 - TUI selected detail key bounds
+
+- Task selected: add table-driven bounds tests for `selectedIssueID` and `selectedTeamName`.
+- Why it was valuable: detail view routing depends on selected agent/team keys, and the helpers previously lacked direct coverage for wrong-panel, negative-selection, and out-of-range cases.
+- Files changed: `internal/tui/navigation_test.go`.
+- Tests run: `go test ./internal/tui -run TestModelSelectedDetailKeys -count=1 -v`, `go test ./internal/tui -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`, `git diff --check`.
+- Commit hash: `e3f6eb3`.
+- GitNexus impact summary: both `selectedIssueID` and `selectedTeamName` were LOW risk, each with 1 direct caller (`Model.renderDetailContent`), 2 affected TUI processes (`Update`, `syncTables`), and 1 affected module.
+- Skipped high-risk alternatives: did not expand `compactEvent`; it remains HIGH impact without a concrete failing case.
+- Remaining follow-up: table and team-table selected-row helpers are still possible but lower value; stop soon if no stronger candidate appears.
