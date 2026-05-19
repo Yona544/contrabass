@@ -367,3 +367,14 @@
 - GitNexus impact summary: `normalizeListenAddr` was LOW risk with 1 direct caller (`NewServer`), 2 affected processes (`cmd/contrabass/main.go:run` and `runTeamExecutionWebServer`), and 2 affected modules.
 - Skipped high-risk alternatives: did not touch dashboard server lifecycle or HTTP serving paths.
 - Remaining follow-up: candidate pool is mostly exhausted; only continue with pure deterministic helpers that expose a real boundary or fallback behavior.
+
+## 2026-05-19 - Update version precedence coverage
+
+- Task selected: add `IsNewer` cases where lower major, minor, or patch versions must not be treated as updates.
+- Why it was valuable: update notification behavior depends on semantic version precedence, and the new cases lock comparisons where later components are numerically larger but an earlier component is lower.
+- Files changed: `internal/update/update_test.go`.
+- Tests run: `go test ./internal/update -run TestIsNewer -count=1 -v`, `go test ./internal/update -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`, `git diff --check`.
+- Commit hash: `54e768c`.
+- GitNexus impact summary: `IsNewer` was LOW risk with 1 direct caller (`Check`), 2 affected processes (`main` and `Check`), and 2 affected modules.
+- Skipped high-risk alternatives: skipped `agent.IsHeartbeatEvent` after GitNexus reported HIGH impact through orchestrator event handling and SSE filtering.
+- Remaining follow-up: remaining candidates are increasingly marginal; stop unless the next candidate is a deterministic caller-facing helper with uncovered boundary behavior.
