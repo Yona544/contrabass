@@ -220,16 +220,30 @@ func TestHandleUpdateBoardIssuePublishesMovedEvent(t *testing.T) {
 }
 
 func TestHandleUpdateBoardIssueBadRequest(t *testing.T) {
-	bp := &fakeBoardProvider{
-		issues: map[string]tracker.LocalBoardIssue{
-			"CB-1": {ID: "CB-1", Identifier: "CB-1", State: tracker.LocalBoardStateTodo},
-		},
+	tests := []struct {
+		name    string
+		body    string
+		wantErr string
+	}{
+		{name: "invalid json", body: "{bad json", wantErr: "invalid request body"},
+		{name: "invalid state", body: `{"state":"blocked"}`, wantErr: "invalid issue state"},
 	}
 
-	rec := boardRequest(t, bp, http.MethodPatch, "/api/v1/board/issues/CB-1", "{bad json")
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			bp := &fakeBoardProvider{
+				issues: map[string]tracker.LocalBoardIssue{
+					"CB-1": {ID: "CB-1", Identifier: "CB-1", State: tracker.LocalBoardStateTodo},
+				},
+			}
 
-	assert.Equal(t, http.StatusBadRequest, rec.Code)
-	assert.Equal(t, "invalid request body", readErrorMessage(t, rec))
+			rec := boardRequest(t, bp, http.MethodPatch, "/api/v1/board/issues/CB-1", tt.body)
+
+			assert.Equal(t, http.StatusBadRequest, rec.Code)
+			assert.Equal(t, tt.wantErr, readErrorMessage(t, rec))
+		})
+	}
 }
 
 func TestHandleUpdateBoardIssueNotFound(t *testing.T) {
