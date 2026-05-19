@@ -741,6 +741,46 @@ func TestStartEventBridge_NilInputs(t *testing.T) {
 	})
 }
 
+func TestStartTeamEventBridge_NilInputs(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func() (context.Context, *tea.Program, chan types.TeamEvent, func())
+	}{
+		{
+			name: "nil context replaced with background",
+			setup: func() (context.Context, *tea.Program, chan types.TeamEvent, func()) {
+				ch := make(chan types.TeamEvent)
+				return nil, tea.NewProgram(NewModel()), ch, func() { close(ch) }
+			},
+		},
+		{
+			name: "all three arguments nil",
+			setup: func() (context.Context, *tea.Program, chan types.TeamEvent, func()) {
+				return nil, nil, nil, nil
+			},
+		},
+		{
+			name: "nil program and nil events together",
+			setup: func() (context.Context, *tea.Program, chan types.TeamEvent, func()) {
+				return context.Background(), nil, nil, nil
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, program, events, cleanup := tt.setup()
+			if cleanup != nil {
+				defer cleanup()
+			}
+
+			assert.NotPanics(t, func() {
+				StartTeamEventBridge(ctx, program, events)
+			})
+		})
+	}
+}
+
 func TestHelpToggle(t *testing.T) {
 	m := NewModel()
 	assert.False(t, m.help.ShowAll)
