@@ -356,3 +356,14 @@
 - GitNexus impact summary: `ParseModelOverride` was LOW risk with 3 direct callers (`normalizeIssue` for Linear/GitHub and local `toIssue`), 1 affected tracker process, and 1 affected module.
 - Skipped high-risk alternatives: continued to avoid local tracker constructor/lifecycle paths and config team getters that previously reported HIGH or CRITICAL impact.
 - Remaining follow-up: candidate value is now thin; prefer stopping unless a clearly caller-facing deterministic parser/helper gap is found.
+
+## 2026-05-19 - Web listen address normalization coverage
+
+- Task selected: table-drive `TestNormalizeListenAddr` and add whitespace boundary cases.
+- Why it was valuable: the dashboard server listen address normalization is caller-facing startup behavior, and the test now locks defaulting, port-only localhost expansion, and trimming for explicit hosts.
+- Files changed: `internal/web/server_test.go`.
+- Tests run: `go test ./internal/web -run TestNormalizeListenAddr -count=1 -v`, `go test ./internal/web -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`, `git diff --check`.
+- Commit hash: `fee0274`.
+- GitNexus impact summary: `normalizeListenAddr` was LOW risk with 1 direct caller (`NewServer`), 2 affected processes (`cmd/contrabass/main.go:run` and `runTeamExecutionWebServer`), and 2 affected modules.
+- Skipped high-risk alternatives: did not touch dashboard server lifecycle or HTTP serving paths.
+- Remaining follow-up: candidate pool is mostly exhausted; only continue with pure deterministic helpers that expose a real boundary or fallback behavior.
