@@ -34,6 +34,7 @@ func TestParseModelOverride(t *testing.T) {
 		{name: "malformed comment", body: "<!-- model: -->", want: ""},
 		{name: "embedded in text", body: "Please use\n<!-- model: opus -->\nfor this task", want: "opus"},
 		{name: "multiple overrides uses first", body: "<!-- model: opus -->\n<!-- model: sonnet -->", want: "opus"},
+		{name: "empty override falls through to first model", body: "<!-- model: -->\n<!-- model: sonnet -->", want: "sonnet"},
 		{name: "first override wins regardless of vendor", body: "<!-- model: gpt-4 -->\n<!-- model: sonnet -->", want: "gpt-4"},
 	}
 
