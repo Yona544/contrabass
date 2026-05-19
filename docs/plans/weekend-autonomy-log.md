@@ -312,3 +312,14 @@
 - GitNexus impact summary: `tracker.IsLinearTracker` was LOW risk with 1 direct orchestrator caller, 1 affected process (`completeRun`), and 1 affected module; `LinearClient.IsLinearTracker` was LOW risk with no indexed upstream impact.
 - Skipped high-risk alternatives: continued to avoid config team runtime getters and lifecycle paths.
 - Remaining follow-up: inspect only pure helper/error-formatting gaps next; stop if candidates are lifecycle-heavy, redundant, or only coverage-padding.
+
+## 2026-05-19 - Linear error message coverage
+
+- Task selected: add table-driven tests for `RateLimitError.Error` and `AuthError.Error`.
+- Why it was valuable: Linear API error handling exposes these messages to callers, and the formatting branches for retry-after and auth status/message had no direct coverage.
+- Files changed: `internal/tracker/linear_test.go`.
+- Tests run: `go test ./internal/tracker -run TestLinearErrors -count=1 -v`, `go test ./internal/tracker -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`, `git diff --check`.
+- Commit hash: `dbb335e`.
+- GitNexus impact summary: both Linear error `Error` methods were LOW risk with no indexed upstream impact.
+- Skipped high-risk alternatives: continued to avoid config team runtime getters and lifecycle paths.
+- Remaining follow-up: remaining tracker gaps are mostly network/lifecycle paths or already-covered parsers; reassess before adding more.
