@@ -43,6 +43,40 @@ func testClient(t *testing.T, url string) *LinearClient {
 	return client
 }
 
+func TestLinearErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{
+			name: "rate limit without retry after",
+			err:  &RateLimitError{},
+			want: "linear API rate limited",
+		},
+		{
+			name: "rate limit with retry after",
+			err:  &RateLimitError{RetryAfter: 2 * time.Minute},
+			want: "linear API rate limited, retry after 2m0s",
+		},
+		{
+			name: "auth error",
+			err:  &AuthError{StatusCode: http.StatusUnauthorized, Message: "bad token"},
+			want: "linear API auth error (status 401): bad token",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, tt.err.Error())
+		})
+	}
+}
+
 func respondJSON(w http.ResponseWriter, statusCode int, body interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
