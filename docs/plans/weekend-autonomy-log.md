@@ -422,3 +422,14 @@
 - GitNexus impact summary: `issueFromSnapshot` was LOW risk with 2 direct handler callers (`handleGetIssueDetails`, `handleGetIssueTimeline`), 2 affected web processes, and 1 affected module.
 - Skipped high-risk alternatives: continued to skip `agent.IsHeartbeatEvent`; avoided broader dashboard serving paths.
 - Remaining follow-up: remaining candidates are mostly lower-value direct tests or already-covered behavior; stop soon unless a clearly caller-facing gap remains.
+
+## 2026-05-19 - Invalid board state update coverage
+
+- Task selected: expand board PATCH bad-request coverage to include invalid `state` values.
+- Why it was valuable: board clients receive a distinct 400 response for unsupported state values, and the existing bad-request test only covered malformed JSON.
+- Files changed: `internal/web/board_test.go`.
+- Tests run: `go test ./internal/web -run TestHandleUpdateBoardIssueBadRequest -count=1 -v`, `go test ./internal/web -count=1`, `go test ./... -count=1 -timeout=20m` (first run hit unrelated Codex/orchestrator flakes; the failed tests passed narrowly, and a standard rerun passed), `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`, `git diff --check`.
+- Commit hash: `fa031f1`.
+- GitNexus impact summary: `handleUpdateBoardIssue` was LOW risk with no indexed upstream impact, no affected processes, and no affected modules.
+- Skipped high-risk alternatives: avoided changing board handler behavior and broader board lifecycle paths.
+- Remaining follow-up: remaining web candidates are now mostly lower-value direct tests; stop unless a stronger caller-facing gap appears.
