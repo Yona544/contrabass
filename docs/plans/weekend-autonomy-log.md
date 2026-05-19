@@ -389,3 +389,14 @@
 - GitNexus impact summary: `TeamPhase.IsTerminal` and `TeamPhase.ValidTransitions` were LOW risk with no indexed upstream impact, no affected processes, and no affected modules.
 - Skipped high-risk alternatives: continued to skip `agent.IsHeartbeatEvent` because GitNexus reported HIGH impact.
 - Remaining follow-up: after this three-slice block, re-rank; likely stop unless GitNexus or coverage reveals a focused deterministic gap with LOW/MEDIUM impact.
+
+## 2026-05-19 - Web board not-found helper coverage
+
+- Task selected: add table-driven direct coverage for `isBoardIssueNotFound`.
+- Why it was valuable: board handlers map provider not-found errors to 404 responses, and this locks nil, case-insensitive not-found text, and unrelated-error behavior without touching HTTP serving logic.
+- Files changed: `internal/web/board_test.go`.
+- Tests run: `go test ./internal/web -run TestIsBoardIssueNotFound -count=1 -v`, `go test ./internal/web -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`, `git diff --check`.
+- Commit hash: `25a3a98`.
+- GitNexus impact summary: `isBoardIssueNotFound` was LOW risk with 2 direct handler callers, 2 affected web processes, and 1 affected module.
+- Skipped high-risk alternatives: avoided broader board handler behavior changes and lifecycle paths.
+- Remaining follow-up: remaining candidate quality is low; stop after final verification unless a stronger deterministic helper appears.
