@@ -323,3 +323,14 @@
 - GitNexus impact summary: both Linear error `Error` methods were LOW risk with no indexed upstream impact.
 - Skipped high-risk alternatives: continued to avoid config team runtime getters and lifecycle paths.
 - Remaining follow-up: remaining tracker gaps are mostly network/lifecycle paths or already-covered parsers; reassess before adding more.
+
+## 2026-05-19 - Workspace mock manager coverage
+
+- Task selected: add tests for `MockManager.List` and `MockManager.CleanupAll`.
+- Why it was valuable: workspace mock tests covered create/cleanup/exists but not sorted listing or bulk cleanup, both of which are useful for deterministic in-memory test doubles.
+- Files changed: `internal/workspace/mock_test.go`.
+- Tests run: `go test ./internal/workspace -run "TestMockManager_ListReturnsSortedIssueIDs|TestMockManager_CleanupAllClearsActiveWorkspaces" -count=1 -v`, `go test ./internal/workspace -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`, `git diff --check`.
+- Commit hash: `fe28406`.
+- GitNexus impact summary: `MockManager.List` and `MockManager.CleanupAll` were LOW risk with no indexed upstream impact.
+- Skipped high-risk alternatives: avoided real workspace lifecycle and git worktree paths.
+- Remaining follow-up: remaining workspace gaps are mostly lifecycle or git command paths; stop unless a pure helper remains.
