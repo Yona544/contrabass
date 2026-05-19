@@ -181,6 +181,81 @@ func TestCursorMovementOnTeamPanel(t *testing.T) {
 	assert.Equal(t, 1, m.teamTable.Selected())
 }
 
+func TestModelSelectedDetailKeys(t *testing.T) {
+	tests := []struct {
+		name          string
+		focusedPanel  FocusedPanel
+		agentKeys     []string
+		teamKeys      []string
+		agentSelected int
+		teamSelected  int
+		wantIssueID   string
+		wantTeamName  string
+	}{
+		{
+			name:          "agent selection",
+			focusedPanel:  PanelAgents,
+			agentKeys:     []string{"ISSUE-1", "ISSUE-2"},
+			agentSelected: 1,
+			wantIssueID:   "ISSUE-2",
+		},
+		{
+			name:         "team selection",
+			focusedPanel: PanelTeam,
+			teamKeys:     []string{"team-a", "team-b"},
+			teamSelected: 0,
+			wantTeamName: "team-a",
+		},
+		{
+			name:          "agent helper ignores team panel",
+			focusedPanel:  PanelTeam,
+			agentKeys:     []string{"ISSUE-1"},
+			agentSelected: 0,
+			teamKeys:      []string{"team-a"},
+			wantTeamName:  "team-a",
+		},
+		{
+			name:          "team helper ignores agent panel",
+			focusedPanel:  PanelAgents,
+			agentKeys:     []string{"ISSUE-1"},
+			agentSelected: 0,
+			teamKeys:      []string{"team-a"},
+			teamSelected:  0,
+			wantIssueID:   "ISSUE-1",
+		},
+		{
+			name:          "negative selections return empty",
+			focusedPanel:  PanelAgents,
+			agentKeys:     []string{"ISSUE-1"},
+			teamKeys:      []string{"team-a"},
+			agentSelected: -1,
+			teamSelected:  -1,
+		},
+		{
+			name:          "out of range selections return empty",
+			focusedPanel:  PanelAgents,
+			agentKeys:     []string{"ISSUE-1"},
+			teamKeys:      []string{"team-a"},
+			agentSelected: 3,
+			teamSelected:  2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewModel()
+			m.focusedPanel = tt.focusedPanel
+			m.agentKeys = tt.agentKeys
+			m.teamKeys = tt.teamKeys
+			m.table = m.table.SetSelected(tt.agentSelected)
+			m.teamTable = m.teamTable.SetSelected(tt.teamSelected)
+
+			assert.Equal(t, tt.wantIssueID, m.selectedIssueID())
+			assert.Equal(t, tt.wantTeamName, m.selectedTeamName())
+		})
+	}
+}
+
 func TestAgentEventLogPopulated(t *testing.T) {
 	m := NewModel()
 	now := time.Now()
