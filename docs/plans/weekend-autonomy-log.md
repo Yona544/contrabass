@@ -334,3 +334,14 @@
 - GitNexus impact summary: `MockManager.List` and `MockManager.CleanupAll` were LOW risk with no indexed upstream impact.
 - Skipped high-risk alternatives: avoided real workspace lifecycle and git worktree paths.
 - Remaining follow-up: remaining workspace gaps are mostly lifecycle or git command paths; stop unless a pure helper remains.
+
+## 2026-05-19 - Local board issue state mapping coverage
+
+- Task selected: add table-driven coverage for `LocalBoardState.IssueState`.
+- Why it was valuable: local board state conversion feeds normalized tracker issue state, and the test now locks each board-state mapping plus the unknown-state fallback without touching local tracker lifecycle.
+- Files changed: `internal/tracker/local_test.go`.
+- Tests run: `go test ./internal/tracker -run TestLocalBoardStateIssueState -count=1 -v`, `go test ./internal/tracker -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`, `git diff --check`.
+- Commit hash: `64fe5b8`.
+- GitNexus impact summary: `LocalBoardState.IssueState` was LOW risk with no direct non-test callers, no affected processes, and no affected modules.
+- Skipped high-risk alternatives: skipped `NewLocalTracker` after GitNexus reported HIGH impact; did not add `BoardDir` coverage because it would be lower-value and constructor-adjacent.
+- Remaining follow-up: remaining local tracker candidates are mostly lifecycle/comment paths; stop unless a focused caller-facing behavior gap appears.
