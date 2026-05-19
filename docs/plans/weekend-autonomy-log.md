@@ -290,3 +290,14 @@
 - GitNexus impact summary: `SelectedRow`, `RowCount`, `TeamCount`, and `SelectedWorkers` were LOW risk with no indexed upstream impact; `SelectedTeam` was LOW risk with 1 direct caller (`SelectedWorkers`) and no affected processes.
 - Skipped high-risk alternatives: continued to avoid `compactEvent` and lifecycle-heavy runtime paths.
 - Remaining follow-up: remaining TUI candidates are mostly lower-value coverage around presentation helpers; prefer moving to pure tracker/config helpers only when a clear edge case appears.
+
+## 2026-05-19 - Linear sync mode explicitness coverage
+
+- Task selected: add table-driven tests for `LinearSyncCommentsModeExplicit`.
+- Why it was valuable: comment sync behavior needs to distinguish omitted/default modes from explicitly configured modes, including whitespace-only values.
+- Files changed: `internal/config/config_test.go`.
+- Tests run: `go test ./internal/config -run TestWorkflowConfig_LinearSyncCommentsModeExplicit -count=1 -v`, `go test ./internal/config -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`, `git diff --check`.
+- Commit hash: `01bfcdf`.
+- GitNexus impact summary: `LinearSyncCommentsModeExplicit` was LOW risk with 1 direct caller (`cmd/contrabass/main.go:run`), 2 affected CLI processes, and 1 affected module.
+- Skipped high-risk alternatives: skipped `TeamMaxWorkers`, `TeamMaxFixLoops`, `TeamClaimLeaseSeconds`, and `ValidateWorkerMode` after GitNexus reported HIGH or CRITICAL impact through team execution paths.
+- Remaining follow-up: `tracker.IsLinearTracker` is the next viable low-risk helper candidate; avoid config team runtime getters unless a failing test proves a concrete bug.
