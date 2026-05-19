@@ -114,6 +114,37 @@ func TestTableSetWidth(t *testing.T) {
 	assert.Contains(t, out, "X-1")
 }
 
+func TestTableSelectedRow(t *testing.T) {
+	rows := []AgentRow{
+		{IssueID: "ISSUE-1", Phase: types.StreamingTurn},
+		{IssueID: "ISSUE-2", Phase: types.Succeeded},
+	}
+
+	tests := []struct {
+		name     string
+		selected int
+		wantRow  AgentRow
+		wantOK   bool
+	}{
+		{name: "first row", selected: 0, wantRow: rows[0], wantOK: true},
+		{name: "second row", selected: 1, wantRow: rows[1], wantOK: true},
+		{name: "negative selection", selected: -1, wantOK: false},
+		{name: "out of range selection", selected: len(rows), wantOK: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tbl := NewTable().Update(rows, "●").SetSelected(tt.selected)
+
+			got, ok := tbl.SelectedRow()
+
+			assert.Equal(t, tt.wantOK, ok)
+			assert.Equal(t, tt.wantRow, got)
+			assert.Equal(t, len(rows), tbl.RowCount())
+		})
+	}
+}
+
 func TestDisplayIssueID(t *testing.T) {
 	tests := []struct {
 		name string

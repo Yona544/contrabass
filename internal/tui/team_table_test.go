@@ -38,6 +38,45 @@ func TestTeamTableBuildRowsTracksFlattenedTeamRows(t *testing.T) {
 	assert.Contains(t, rows[4][1], "└─")
 }
 
+func TestTeamTableSelectedTeamAndWorkers(t *testing.T) {
+	teams := []TeamRow{
+		{TeamName: "alpha", Phase: "team-exec"},
+		{TeamName: "beta", Phase: "team-verify"},
+	}
+	workers := map[string][]TeamWorkerRow{
+		"alpha": {
+			{WorkerID: "worker-1", Status: "working"},
+		},
+	}
+
+	tests := []struct {
+		name        string
+		selected    int
+		wantTeam    TeamRow
+		wantTeamOK  bool
+		wantWorkers []TeamWorkerRow
+	}{
+		{name: "first team with workers", selected: 0, wantTeam: teams[0], wantTeamOK: true, wantWorkers: workers["alpha"]},
+		{name: "second team without worker entry", selected: 1, wantTeam: teams[1], wantTeamOK: true},
+		{name: "negative selection", selected: -1},
+		{name: "out of range selection", selected: len(teams)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tbl := NewTeamTable().Update(teams, workers, "●").SetSelected(tt.selected)
+
+			gotTeam, ok := tbl.SelectedTeam()
+			gotWorkers := tbl.SelectedWorkers()
+
+			assert.Equal(t, tt.wantTeamOK, ok)
+			assert.Equal(t, tt.wantTeam, gotTeam)
+			assert.Equal(t, tt.wantWorkers, gotWorkers)
+			assert.Equal(t, len(teams), tbl.TeamCount())
+		})
+	}
+}
+
 func TestCompactTeamPhase(t *testing.T) {
 	tests := []struct {
 		name  string
