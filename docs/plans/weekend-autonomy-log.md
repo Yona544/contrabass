@@ -257,3 +257,14 @@
 - GitNexus impact summary: `Backoff.View` was LOW risk with 1 direct caller (`Model.syncTables`), 2 affected TUI processes (`Update`, `syncTables`), and 1 affected module; `truncateRunesWithEllipsis` was LOW risk with 1 direct caller and the same TUI process reach.
 - Skipped high-risk alternatives: none in this slice.
 - Remaining follow-up: re-rank after three code/test slices; likely next candidates are pure tracker or config helpers unless TUI coverage still has a clearly deterministic gap.
+
+## 2026-05-19 - TUI team bridge nil-input coverage
+
+- Task selected: add table-driven `StartTeamEventBridge` nil-input coverage.
+- Why it was valuable: `StartTeamEventBridge` mirrors the agent event bridge but had no direct nil-input coverage, and the test verifies graceful no-panic behavior without timing waits or runtime lifecycle setup.
+- Files changed: `internal/tui/model_test.go`.
+- Tests run: `go test ./internal/tui -run TestStartTeamEventBridge_NilInputs -count=1 -v`, `go test ./internal/tui -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`, `git diff --check`.
+- Commit hash: `d2159c5`.
+- GitNexus impact summary: `StartTeamEventBridge` was LOW risk with no direct indexed callers and no affected processes; context still showed `cmd/contrabass/team_root.go` as an incoming file reference.
+- Skipped high-risk alternatives: skipped expanding `compactEvent`; GitNexus previously reported HIGH impact through both detail rendering and the agent table.
+- Remaining follow-up: selection-boundary helpers are the next viable TUI candidate, but they are lower value than the four completed slices.
