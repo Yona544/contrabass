@@ -279,3 +279,14 @@
 - GitNexus impact summary: both `selectedIssueID` and `selectedTeamName` were LOW risk, each with 1 direct caller (`Model.renderDetailContent`), 2 affected TUI processes (`Update`, `syncTables`), and 1 affected module.
 - Skipped high-risk alternatives: did not expand `compactEvent`; it remains HIGH impact without a concrete failing case.
 - Remaining follow-up: table and team-table selected-row helpers are still possible but lower value; stop soon if no stronger candidate appears.
+
+## 2026-05-19 - TUI table selection helper coverage
+
+- Task selected: add table-driven tests for `Table.SelectedRow`, `Table.RowCount`, `TeamTable.SelectedTeam`, `TeamTable.SelectedWorkers`, and `TeamTable.TeamCount`.
+- Why it was valuable: these selection helpers are small but feed cursor/detail behavior, and direct coverage now locks valid, negative, out-of-range, and missing-worker-map cases.
+- Files changed: `internal/tui/table_test.go`, `internal/tui/team_table_test.go`.
+- Tests run: `go test ./internal/tui -run "TestTableSelectedRow|TestTeamTableSelectedTeamAndWorkers" -count=1 -v`, `go test ./internal/tui -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`, `git diff --check`.
+- Commit hash: `7463f45`.
+- GitNexus impact summary: `SelectedRow`, `RowCount`, `TeamCount`, and `SelectedWorkers` were LOW risk with no indexed upstream impact; `SelectedTeam` was LOW risk with 1 direct caller (`SelectedWorkers`) and no affected processes.
+- Skipped high-risk alternatives: continued to avoid `compactEvent` and lifecycle-heavy runtime paths.
+- Remaining follow-up: remaining TUI candidates are mostly lower-value coverage around presentation helpers; prefer moving to pure tracker/config helpers only when a clear edge case appears.
