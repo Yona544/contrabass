@@ -301,3 +301,14 @@
 - GitNexus impact summary: `LinearSyncCommentsModeExplicit` was LOW risk with 1 direct caller (`cmd/contrabass/main.go:run`), 2 affected CLI processes, and 1 affected module.
 - Skipped high-risk alternatives: skipped `TeamMaxWorkers`, `TeamMaxFixLoops`, `TeamClaimLeaseSeconds`, and `ValidateWorkerMode` after GitNexus reported HIGH or CRITICAL impact through team execution paths.
 - Remaining follow-up: `tracker.IsLinearTracker` is the next viable low-risk helper candidate; avoid config team runtime getters unless a failing test proves a concrete bug.
+
+## 2026-05-19 - Linear tracker detection coverage
+
+- Task selected: add table-driven tests for `tracker.IsLinearTracker` and `LinearClient.IsLinearTracker`.
+- Why it was valuable: legacy comment suppression depends on correctly identifying Linear-backed trackers, and the helper previously had no direct nil/non-linear/linear coverage.
+- Files changed: `internal/tracker/tracker_test.go`.
+- Tests run: `go test ./internal/tracker -run "TestIsLinearTracker|TestLinearClientIsLinearTracker" -count=1 -v`, `go test ./internal/tracker -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`, `git diff --check`.
+- Commit hash: `d53a878`.
+- GitNexus impact summary: `tracker.IsLinearTracker` was LOW risk with 1 direct orchestrator caller, 1 affected process (`completeRun`), and 1 affected module; `LinearClient.IsLinearTracker` was LOW risk with no indexed upstream impact.
+- Skipped high-risk alternatives: continued to avoid config team runtime getters and lifecycle paths.
+- Remaining follow-up: inspect only pure helper/error-formatting gaps next; stop if candidates are lifecycle-heavy, redundant, or only coverage-padding.
