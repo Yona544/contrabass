@@ -345,3 +345,14 @@
 - GitNexus impact summary: `LocalBoardState.IssueState` was LOW risk with no direct non-test callers, no affected processes, and no affected modules.
 - Skipped high-risk alternatives: skipped `NewLocalTracker` after GitNexus reported HIGH impact; did not add `BoardDir` coverage because it would be lower-value and constructor-adjacent.
 - Remaining follow-up: remaining local tracker candidates are mostly lifecycle/comment paths; stop unless a focused caller-facing behavior gap appears.
+
+## 2026-05-19 - Model override empty-directive fallback coverage
+
+- Task selected: add a focused table case for `ParseModelOverride` when an empty directive appears before a valid model directive.
+- Why it was valuable: the parser documentation says it returns the first non-empty model value, and this locks the fallback behavior without changing parser logic.
+- Files changed: `internal/tracker/model_override_test.go`.
+- Tests run: `go test ./internal/tracker -run TestParseModelOverride -count=1 -v`, `go test ./internal/tracker -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`, `git diff --check`.
+- Commit hash: `61a266d`.
+- GitNexus impact summary: `ParseModelOverride` was LOW risk with 3 direct callers (`normalizeIssue` for Linear/GitHub and local `toIssue`), 1 affected tracker process, and 1 affected module.
+- Skipped high-risk alternatives: continued to avoid local tracker constructor/lifecycle paths and config team getters that previously reported HIGH or CRITICAL impact.
+- Remaining follow-up: candidate value is now thin; prefer stopping unless a clearly caller-facing deterministic parser/helper gap is found.
