@@ -108,6 +108,23 @@ func TestHandleGetIssueDetails_ProviderUnavailable(t *testing.T) {
 	assert.Equal(t, "issue-1", payload.Issue.ID)
 }
 
+func TestHandleGetIssueDetails_ProviderError(t *testing.T) {
+	s := issueDetailTestServer()
+	s.SetIssueDetailProvider(fakeIssueDetailProvider{err: errors.New("linear unavailable")})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/issues/issue-1/details", nil)
+	rec := httptest.NewRecorder()
+	s.newMux().ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadGateway, rec.Code)
+	var payload issueDetailErrorResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
+	assert.Equal(t, "linear unavailable", payload.Error)
+	assert.Equal(t, "issue-1", payload.Issue.ID)
+	assert.Equal(t, "Wire detail", payload.Issue.Title)
+	assert.False(t, payload.GeneratedAt.IsZero())
+}
+
 func TestHandleGetIssueTimeline_Success(t *testing.T) {
 	s := issueDetailTestServer()
 	s.SetTimelineProvider(fakeTimelineProvider{
