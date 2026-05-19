@@ -378,3 +378,14 @@
 - GitNexus impact summary: `IsNewer` was LOW risk with 1 direct caller (`Check`), 2 affected processes (`main` and `Check`), and 2 affected modules.
 - Skipped high-risk alternatives: skipped `agent.IsHeartbeatEvent` after GitNexus reported HIGH impact through orchestrator event handling and SSE filtering.
 - Remaining follow-up: remaining candidates are increasingly marginal; stop unless the next candidate is a deterministic caller-facing helper with uncovered boundary behavior.
+
+## 2026-05-19 - Team phase helper coverage
+
+- Task selected: add table-driven coverage for `TeamPhase.IsTerminal` and `TeamPhase.ValidTransitions`.
+- Why it was valuable: other shared enum helpers already had direct coverage, while team phase terminal and transition behavior feeds team phase governance and previously had no focused helper tests.
+- Files changed: `internal/types/types_test.go`.
+- Tests run: `go test ./internal/types -run "TestTeamPhaseIsTerminal|TestTeamPhaseValidTransitions" -count=1 -v`, `go test ./internal/types -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`, `git diff --check`.
+- Commit hash: `596e421`.
+- GitNexus impact summary: `TeamPhase.IsTerminal` and `TeamPhase.ValidTransitions` were LOW risk with no indexed upstream impact, no affected processes, and no affected modules.
+- Skipped high-risk alternatives: continued to skip `agent.IsHeartbeatEvent` because GitNexus reported HIGH impact.
+- Remaining follow-up: after this three-slice block, re-rank; likely stop unless GitNexus or coverage reveals a focused deterministic gap with LOW/MEDIUM impact.
