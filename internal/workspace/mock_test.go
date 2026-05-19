@@ -49,3 +49,33 @@ func TestMockManager_CleanupAcceptsNonEmptyIssueID(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, mgr.Exists("ISSUE-2"))
 }
+
+func TestMockManager_ListReturnsSortedIssueIDs(t *testing.T) {
+	t.Parallel()
+
+	mgr := NewMockManager(t.TempDir())
+	for _, issueID := range []string{"ISSUE-3", "ISSUE-1", "ISSUE-2"} {
+		_, err := mgr.Create(context.Background(), types.Issue{ID: issueID})
+		require.NoError(t, err)
+	}
+
+	assert.Equal(t, []string{"ISSUE-1", "ISSUE-2", "ISSUE-3"}, mgr.List())
+}
+
+func TestMockManager_CleanupAllClearsActiveWorkspaces(t *testing.T) {
+	t.Parallel()
+
+	mgr := NewMockManager(t.TempDir())
+	for _, issueID := range []string{"ISSUE-1", "ISSUE-2"} {
+		_, err := mgr.Create(context.Background(), types.Issue{ID: issueID})
+		require.NoError(t, err)
+	}
+	require.NotEmpty(t, mgr.List())
+
+	err := mgr.CleanupAll(context.Background())
+	require.NoError(t, err)
+
+	assert.Empty(t, mgr.List())
+	assert.False(t, mgr.Exists("ISSUE-1"))
+	assert.False(t, mgr.Exists("ISSUE-2"))
+}
