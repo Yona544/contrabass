@@ -444,3 +444,14 @@
 - GitNexus impact summary: `FetchLatestVersion` was LOW risk with 1 direct caller (`Check`), 2 affected processes (`main` and `Check`), and 2 affected modules.
 - Skipped high-risk alternatives: avoided broader update-check behavior changes and network-path rewrites.
 - Remaining follow-up: after this three-slice block, re-rank; remaining candidates are likely too small unless they cover caller-facing fallback behavior.
+
+## 2026-05-20 - Timeline hidden marker escaping coverage
+
+- Task selected: add table-driven coverage for `HiddenNodeMarker` escaping.
+- Why it was valuable: Linear timeline sync idempotency depends on hidden marker attributes staying valid when issue, run, node, or hash values include quotes, backslashes, or double hyphens.
+- Files changed: `internal/timeline/store_test.go`.
+- Tests run: `go test ./internal/timeline -run TestHiddenNodeMarkerEscapesUnsafeValues -count=1 -v`, `go test ./internal/timeline -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`, `git diff --check`.
+- Commit hash: `d1a9706`.
+- GitNexus impact summary: `HiddenNodeMarker` was LOW risk with 1 direct caller (`RenderNodeCommentBody`), no affected processes, and 1 affected module (`Timeline`).
+- Skipped high-risk alternatives: avoided timeline syncer `Run`/`Drain` lifecycle paths and broader comment sync behavior.
+- Remaining follow-up: consider `tracker.IsLinearTracker` or another pure deterministic helper only if it adds caller-facing boundary coverage; remaining candidates are low-value.
