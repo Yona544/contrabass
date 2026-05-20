@@ -317,3 +317,68 @@ func TestRenderNodeCommentBodyIncludesHiddenMarker(t *testing.T) {
 	assert.Contains(t, body, `attempt="1"`)
 	assert.Contains(t, body, `content_hash="hash-1"`)
 }
+
+func TestHiddenNodeMarkerEscapesUnsafeValues(t *testing.T) {
+	base := WorkflowNodeSummary{
+		IssueID:     "ENG-7",
+		RunID:       "run-1",
+		NodeID:      "run:attempt-1:complete",
+		Attempt:     2,
+		ContentHash: "hash-1",
+	}
+
+	tests := []struct {
+		name          string
+		mutate        func(*WorkflowNodeSummary)
+		wantAttribute string
+		rawValue      string
+	}{
+		{
+			name: "escapes issue id quotes",
+			mutate: func(node *WorkflowNodeSummary) {
+				node.IssueID = `ENG"7`
+			},
+			wantAttribute: `issue_id="ENG\"7"`,
+			rawValue:      `ENG"7`,
+		},
+		{
+			name: "escapes run id backslashes",
+			mutate: func(node *WorkflowNodeSummary) {
+				node.RunID = `run\1`
+			},
+			wantAttribute: `run_id="run\\1"`,
+			rawValue:      `run\1`,
+		},
+		{
+			name: "separates double hyphen in node id",
+			mutate: func(node *WorkflowNodeSummary) {
+				node.NodeID = "node--1"
+			},
+			wantAttribute: `node_id="node- -1"`,
+			rawValue:      "node--1",
+		},
+		{
+			name: "escapes mixed content hash",
+			mutate: func(node *WorkflowNodeSummary) {
+				node.ContentHash = `hash"--\value`
+			},
+			wantAttribute: `content_hash="hash\"- -\\value"`,
+			rawValue:      `hash"--\value`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			node := base
+			tt.mutate(&node)
+
+			marker := HiddenNodeMarker(node)
+
+			assert.Contains(t, marker, tt.wantAttribute)
+			assert.NotContains(t, marker, tt.rawValue)
+			assert.Contains(t, marker, `attempt="2"`)
+			assert.Contains(t, marker, "<!-- contrabass:workflow-node ")
+			assert.Contains(t, marker, " -->")
+		})
+	}
+}
