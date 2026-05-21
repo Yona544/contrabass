@@ -521,3 +521,14 @@
 - GitNexus impact summary: detect reported LOW risk for the test-only `TestDebounceMultipleRapidEvents` change with no affected processes; no production code was edited.
 - Skipped high-risk alternatives: did not change watcher production debounce behavior; did not modify OMC runtime tests because repeated narrow and package-level stress runs did not reproduce the prior OMC failure.
 - Remaining follow-up: if OMC fails again, capture command log/stderr around `newFakeTeamCLIServer`; current evidence does not justify a code change.
+
+## 2026-05-21 - OMC runtime failure diagnostics
+
+- Task selected: add failure diagnostics to `TestOMCRunner_UsesTeamRuntime`.
+- Why it was valuable: the prior OMC flake only surfaced `exit status 1`, and repeated repro attempts did not fail; future failures now include fake binary path, fake server URL, command log, fake team state, and workspace file listing.
+- Files changed: `internal/agent/omc_test.go`, `internal/agent/omx_test.go`.
+- Tests run: `go test ./internal/agent -run TestOMCRunner_UsesTeamRuntime -count=25 -v`, `go test ./internal/agent -run "TestOMCRunner|TestOMXRunner" -count=5 -timeout=15m`, `go test ./internal/agent -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`, `git diff --check`.
+- Commit hash: `500e37f`.
+- GitNexus impact summary: detect reported LOW risk for test-only agent changes with no affected processes; no production code was edited.
+- Skipped high-risk alternatives: did not change OMC/team CLI runtime behavior because the flake did not reproduce under focused or package-level stress.
+- Remaining follow-up: if the OMC flake recurs, use the emitted diagnostics to determine whether the fake helper failed before logging, failed to reach the fake server, or failed after starting a team.
