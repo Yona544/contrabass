@@ -510,3 +510,14 @@
 - GitNexus impact summary: `LinearSyncer.Notify` was LOW impact with no indexed direct callers, no affected processes, and no affected modules; no production code was edited.
 - Skipped high-risk alternatives: avoided `LinearSyncer.Run`, `Drain`, ticker behavior, and broader lifecycle tests.
 - Remaining follow-up: stop here unless a concrete failure appears; remaining candidates are low-value presentation helpers or lifecycle-heavy syncer paths.
+
+## 2026-05-21 - Config debounce test stabilization
+
+- Task selected: stabilize `TestDebounceMultipleRapidEvents` with condition-based waiting.
+- Why it was valuable: a prior full-suite run observed the old prompt after a fixed 200ms sleep, which matches asynchronous fsnotify delivery plus the watcher debounce/reload window under package-level load.
+- Files changed: `internal/config/watcher_test.go`.
+- Tests run: `go test ./internal/config -run TestDebounceMultipleRapidEvents -count=50 -v`, `go test ./internal/config -count=20 -timeout=10m`, `go test ./internal/config -count=1`, `go test ./internal/agent -run TestOMCRunner_UsesTeamRuntime -count=25 -v`, `go test ./internal/agent -run TestOMCRunner_UsesTeamRuntime -count=10 -v`, `go test ./internal/agent -run "TestOMCRunner|TestOMXRunner|TestOpenCodeRunner" -count=8 -timeout=20m`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`, `git diff --check`.
+- Commit hash: `2b33cc3`.
+- GitNexus impact summary: detect reported LOW risk for the test-only `TestDebounceMultipleRapidEvents` change with no affected processes; no production code was edited.
+- Skipped high-risk alternatives: did not change watcher production debounce behavior; did not modify OMC runtime tests because repeated narrow and package-level stress runs did not reproduce the prior OMC failure.
+- Remaining follow-up: if OMC fails again, capture command log/stderr around `newFakeTeamCLIServer`; current evidence does not justify a code change.
