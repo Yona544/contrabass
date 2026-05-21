@@ -455,3 +455,14 @@
 - GitNexus impact summary: `HiddenNodeMarker` was LOW risk with 1 direct caller (`RenderNodeCommentBody`), no affected processes, and 1 affected module (`Timeline`).
 - Skipped high-risk alternatives: avoided timeline syncer `Run`/`Drain` lifecycle paths and broader comment sync behavior.
 - Remaining follow-up: consider `tracker.IsLinearTracker` or another pure deterministic helper only if it adds caller-facing boundary coverage; remaining candidates are low-value.
+
+## 2026-05-20 - Timeline run marker escaping fix
+
+- Task selected: add a failing test for unsafe values in `RenderRunRootComment` marker attributes, then fix the marker escaping.
+- Why it was valuable: run root comments carry hidden idempotency metadata too, and `--` in issue or run IDs leaked into the HTML comment while node markers already escaped that case.
+- Files changed: `internal/timeline/render.go`, `internal/timeline/render_test.go`.
+- Tests run: `go test ./internal/timeline -run TestRenderRunRootCommentEscapesMarkerValues -count=1 -v` (failed before the fix, passed after), `go test ./internal/timeline -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`, `git diff --check`.
+- Commit hash: `99a5459`.
+- GitNexus impact summary: `RenderRunRootComment` was LOW impact before editing with 1 direct caller (`LinearSyncer.ensureRoot`), 1 affected process (`Run`), and 1 affected module (`Timeline`); detect after the change reported MEDIUM risk for the same timeline run flow.
+- Skipped high-risk alternatives: avoided `LinearSyncer.Run` and `Drain` lifecycle paths; fixed only the proven marker escaping issue.
+- Remaining follow-up: re-rank after the next slice; candidate value is now mostly presentation helpers or lifecycle-adjacent paths.
