@@ -421,12 +421,12 @@ func TestDebounceMultipleRapidEvents(t *testing.T) {
 		time.Sleep(10 * time.Millisecond) // Rapid, within debounce window
 	}
 
-	// Wait for debounce to settle and reload to complete.
-	time.Sleep(200 * time.Millisecond)
-
-	cfg := w.GetConfig()
-	require.NotNil(t, cfg)
-	assert.Equal(t, "Rapid update.", cfg.PromptTemplate)
+	// Wait for debounce to settle and reload to complete. fsnotify delivery can
+	// lag under package-level load, so poll the observable config state.
+	assert.Eventually(t, func() bool {
+		cfg := w.GetConfig()
+		return cfg != nil && cfg.PromptTemplate == "Rapid update."
+	}, 3*time.Second, 50*time.Millisecond)
 	// The key assertion: we got here without panicking or hanging,
 	// which means debounce worked and prevented reload thrashing.
 }
