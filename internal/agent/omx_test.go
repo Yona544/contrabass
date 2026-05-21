@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -657,6 +658,52 @@ func appendLog(text string) error {
 
 func (s *fakeTeamCLIServer) Close() {
 	s.httpServer.Close()
+}
+
+func (s *fakeTeamCLIServer) Diagnostics(t *testing.T, workspace string) string {
+	t.Helper()
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "binary_path=%s\n", s.binaryPath)
+	fmt.Fprintf(&b, "server_url=%s\n", s.httpServer.URL)
+	fmt.Fprintf(&b, "log_path=%s\n", s.logPath)
+	if data, err := os.ReadFile(s.logPath); err != nil {
+		fmt.Fprintf(&b, "command_log_error=%v\n", err)
+	} else {
+		fmt.Fprintf(&b, "command_log:\n%s", string(data))
+		if len(data) == 0 || data[len(data)-1] != '\n' {
+			b.WriteByte('\n')
+		}
+	}
+
+	s.mu.Lock()
+	teams := make([]string, 0, len(s.teams))
+	for team, count := range s.teams {
+		teams = append(teams, fmt.Sprintf("%s=%d", team, count))
+	}
+	s.mu.Unlock()
+	sort.Strings(teams)
+	fmt.Fprintf(&b, "teams=%s\n", strings.Join(teams, ","))
+
+	files := make([]string, 0)
+	if err := filepath.WalkDir(workspace, func(path string, entry os.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return nil
+		}
+		rel, relErr := filepath.Rel(workspace, path)
+		if relErr != nil {
+			rel = path
+		}
+		files = append(files, filepath.ToSlash(rel))
+		return nil
+	}); err != nil {
+		fmt.Fprintf(&b, "workspace_walk_error=%v\n", err)
+	} else {
+		sort.Strings(files)
+		fmt.Fprintf(&b, "workspace_files=%s\n", strings.Join(files, ","))
+	}
+
+	return b.String()
 }
 
 func parseFakeTeamName(args []string) string {

@@ -46,6 +46,9 @@ func TestOMCRunner_UsesTeamRuntime(t *testing.T) {
 	runner := NewOMCRunner(cfg, startupTimeout)
 
 	proc, err := runner.Start(context.Background(), types.Issue{ID: "CB-104", Title: "Add OMC runner"}, workspace, "Do the OMC task")
+	if err != nil {
+		t.Logf("OMC fake team CLI diagnostics:\n%s", server.Diagnostics(t, workspace))
+	}
 	require.NoError(t, err)
 
 	events := collectOpenCodeEvents(t, proc.Events, proc.Done, 4, 5*time.Second)
