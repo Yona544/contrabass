@@ -3,6 +3,7 @@ package timeline
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -199,4 +200,50 @@ func TestLinearSyncerRecordsNonFallbackReplyErrors(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, snapshot.NodeSyncStates, 1)
 	assert.Contains(t, snapshot.NodeSyncStates[0].LastError, "linear down")
+}
+
+func TestRetryAfterTime(t *testing.T) {
+	tests := []struct {
+		name      string
+		err       error
+		wantDelay time.Duration
+	}{
+		{
+			name: "nil error returns zero time",
+		},
+		{
+			name: "generic error returns zero time",
+			err:  errors.New("linear down"),
+		},
+		{
+			name: "zero rate limit duration returns zero time",
+			err:  &tracker.RateLimitError{},
+		},
+		{
+			name: "negative rate limit duration returns zero time",
+			err:  &tracker.RateLimitError{RetryAfter: -time.Second},
+		},
+		{
+			name:      "wrapped positive rate limit duration returns future time",
+			err:       fmt.Errorf("sync failed: %w", &tracker.RateLimitError{RetryAfter: 2 * time.Second}),
+			wantDelay: 2 * time.Second,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			before := time.Now()
+			got := retryAfterTime(tt.err)
+			after := time.Now()
+
+			if tt.wantDelay == 0 {
+				assert.True(t, got.IsZero())
+				return
+			}
+
+			require.False(t, got.IsZero())
+			assert.False(t, got.Before(before.Add(tt.wantDelay)))
+			assert.False(t, got.After(after.Add(tt.wantDelay)))
+		})
+	}
 }
