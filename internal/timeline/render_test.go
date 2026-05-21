@@ -50,6 +50,47 @@ func TestRenderRunRootComment(t *testing.T) {
 	}
 }
 
+func TestRenderRunRootCommentEscapesMarkerValues(t *testing.T) {
+	tests := []struct {
+		name          string
+		run           WorkflowRunSummary
+		wantAttribute string
+		rawAttribute  string
+	}{
+		{
+			name: "separates double hyphen in issue id",
+			run: WorkflowRunSummary{
+				IssueID: "issue--1",
+				RunID:   "run-1",
+				Attempt: 1,
+			},
+			wantAttribute: `issue_id="issue- -1"`,
+			rawAttribute:  `issue_id="issue--1"`,
+		},
+		{
+			name: "escapes mixed run id",
+			run: WorkflowRunSummary{
+				IssueID: "issue-1",
+				RunID:   `run"--\1`,
+				Attempt: 1,
+			},
+			wantAttribute: `run_id="run\"- -\\1"`,
+			rawAttribute:  `run_id="run\"--\\1"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := RenderRunRootComment(tt.run)
+
+			assert.Contains(t, body, tt.wantAttribute)
+			assert.NotContains(t, body, tt.rawAttribute)
+			assert.Contains(t, body, "<!-- contrabass:workflow-run ")
+			assert.Contains(t, body, " -->")
+		})
+	}
+}
+
 func TestRenderNodeComment(t *testing.T) {
 	tests := []struct {
 		name     string

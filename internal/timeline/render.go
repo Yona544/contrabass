@@ -14,7 +14,14 @@ func RenderRunRootComment(run WorkflowRunSummary) string {
 	if identifier == "" {
 		identifier = run.IssueID
 	}
-	return fmt.Sprintf("Contrabass workflow run %s (attempt %d) is %s.\n\n<!-- contrabass:workflow-run issue_id=%q run_id=%q -->", identifier, run.Attempt, status, run.IssueID, run.RunID)
+	return fmt.Sprintf(
+		"Contrabass workflow run %s (attempt %d) is %s.\n\n<!-- contrabass:workflow-run issue_id=\"%s\" run_id=\"%s\" -->",
+		identifier,
+		run.Attempt,
+		status,
+		markerValue(run.IssueID),
+		markerValue(run.RunID),
+	)
 }
 
 func RenderNodeComment(node WorkflowNodeSummary) string {
