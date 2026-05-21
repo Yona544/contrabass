@@ -45,6 +45,13 @@ func RenderNodeComment(node WorkflowNodeSummary) string {
 	if node.TokensIn > 0 || node.TokensOut > 0 {
 		fmt.Fprintf(&b, "\nTokens: in=%d out=%d\n", node.TokensIn, node.TokensOut)
 	}
-	fmt.Fprintf(&b, "\n<!-- contrabass:workflow-node issue_id=%q run_id=%q node_id=%q content_hash=%q -->", node.IssueID, node.RunID, node.NodeID, node.ContentHash)
+	fmt.Fprintf(
+		&b,
+		"\n<!-- contrabass:workflow-node issue_id=\"%s\" run_id=\"%s\" node_id=\"%s\" content_hash=\"%s\" -->",
+		markerValue(node.IssueID),
+		markerValue(node.RunID),
+		markerValue(node.NodeID),
+		markerValue(node.ContentHash),
+	)
 	return b.String()
 }

@@ -147,3 +147,60 @@ func TestRenderNodeComment(t *testing.T) {
 		})
 	}
 }
+
+func TestRenderNodeCommentEscapesMarkerValues(t *testing.T) {
+	tests := []struct {
+		name          string
+		node          WorkflowNodeSummary
+		wantAttribute string
+		rawAttribute  string
+	}{
+		{
+			name: "separates double hyphen in issue id",
+			node: WorkflowNodeSummary{
+				IssueID:     "issue--1",
+				RunID:       "run-1",
+				NodeID:      "node-1",
+				Status:      NodeStatusSucceeded,
+				ContentHash: "hash-1",
+			},
+			wantAttribute: `issue_id="issue- -1"`,
+			rawAttribute:  `issue_id="issue--1"`,
+		},
+		{
+			name: "escapes mixed node id",
+			node: WorkflowNodeSummary{
+				IssueID:     "issue-1",
+				RunID:       "run-1",
+				NodeID:      `node"--\1`,
+				Status:      NodeStatusSucceeded,
+				ContentHash: "hash-1",
+			},
+			wantAttribute: `node_id="node\"- -\\1"`,
+			rawAttribute:  `node_id="node\"--\\1"`,
+		},
+		{
+			name: "escapes mixed content hash",
+			node: WorkflowNodeSummary{
+				IssueID:     "issue-1",
+				RunID:       "run-1",
+				NodeID:      "node-1",
+				Status:      NodeStatusSucceeded,
+				ContentHash: `hash"--\1`,
+			},
+			wantAttribute: `content_hash="hash\"- -\\1"`,
+			rawAttribute:  `content_hash="hash\"--\\1"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := RenderNodeComment(tt.node)
+
+			assert.Contains(t, body, tt.wantAttribute)
+			assert.NotContains(t, body, tt.rawAttribute)
+			assert.Contains(t, body, "<!-- contrabass:workflow-node ")
+			assert.Contains(t, body, " -->")
+		})
+	}
+}
