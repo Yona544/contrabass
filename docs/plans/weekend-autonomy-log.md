@@ -477,3 +477,14 @@
 - GitNexus impact summary: `RenderNodeComment` was LOW impact before editing with 1 direct caller (`LinearSyncer.syncNode`), 1 affected process (`Run`), and 1 affected module (`Timeline`); detect on this isolated diff did not map changed symbols.
 - Skipped high-risk alternatives: avoided node sync lifecycle and retry behavior; changed only marker string rendering after the failing test.
 - Remaining follow-up: after three slices, replan; likely stop unless a non-lifecycle deterministic bug is still visible.
+
+## 2026-05-20 - Timeline snapshot boundary record coverage
+
+- Task selected: add table-driven coverage for snapshot loading with unknown records and a final JSONL record without a trailing newline.
+- Why it was valuable: timeline snapshots are reduced from append-only JSONL files, and restart/loading behavior should ignore forward-compatible record types while still applying the last valid record when the file has no final newline.
+- Files changed: `internal/timeline/store_test.go`.
+- Tests run: `go test ./internal/timeline -run TestStoreLoadSnapshotBoundaryRecords -count=1 -v` (first run exposed a bad nil-vs-empty test expectation, corrected and rerun), `go test ./internal/timeline -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`, `git diff --check`.
+- Commit hash: `5a23ddb`.
+- GitNexus impact summary: `Store.loadSnapshotNoLock` was LOW impact with 1 direct caller (`LoadSnapshot`), 2 affected processes (`LoadSnapshot`, `Run`), and 2 affected modules (`Timeline`, indirect `Orchestrator`); no production code was edited.
+- Skipped high-risk alternatives: avoided changing store locking, append behavior, or syncer lifecycle code.
+- Remaining follow-up: remaining candidates are mostly lower-value helper coverage or lifecycle-adjacent syncer tests; prefer stopping after final verification unless a stronger bug appears.
