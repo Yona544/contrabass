@@ -499,3 +499,14 @@
 - GitNexus impact summary: `retryAfterTime` was LOW impact with 2 direct callers (`LinearSyncer.ensureRoot`, `LinearSyncer.markNodeFailed`), 1 affected process (`Run`), and 1 affected module (`Timeline`); no production code was edited.
 - Skipped high-risk alternatives: avoided `LinearSyncer.Run`/`Drain` lifecycle and timing-heavy queue processing.
 - Remaining follow-up: only `Notify` queue behavior remains plausibly useful; continue only if it can stay deterministic and test-only.
+
+## 2026-05-21 - Timeline syncer notification coverage
+
+- Task selected: add deterministic coverage for `LinearSyncer.Notify`.
+- Why it was valuable: notification enqueueing is the boundary between timeline producers and the syncer queue, and the test locks nil receiver, blank issue, normal enqueue, and full-queue drop behavior without starting the sync loop.
+- Files changed: `internal/timeline/linear_syncer_test.go`.
+- Tests run: `go test ./internal/timeline -run TestLinearSyncerNotify -count=1 -v`, `go test ./internal/timeline -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`, `git diff --check`.
+- Commit hash: `55abebc`.
+- GitNexus impact summary: `LinearSyncer.Notify` was LOW impact with no indexed direct callers, no affected processes, and no affected modules; no production code was edited.
+- Skipped high-risk alternatives: avoided `LinearSyncer.Run`, `Drain`, ticker behavior, and broader lifecycle tests.
+- Remaining follow-up: stop here unless a concrete failure appears; remaining candidates are low-value presentation helpers or lifecycle-heavy syncer paths.
