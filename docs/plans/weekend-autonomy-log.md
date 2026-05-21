@@ -466,3 +466,14 @@
 - GitNexus impact summary: `RenderRunRootComment` was LOW impact before editing with 1 direct caller (`LinearSyncer.ensureRoot`), 1 affected process (`Run`), and 1 affected module (`Timeline`); detect after the change reported MEDIUM risk for the same timeline run flow.
 - Skipped high-risk alternatives: avoided `LinearSyncer.Run` and `Drain` lifecycle paths; fixed only the proven marker escaping issue.
 - Remaining follow-up: re-rank after the next slice; candidate value is now mostly presentation helpers or lifecycle-adjacent paths.
+
+## 2026-05-20 - Timeline node marker escaping fix
+
+- Task selected: add a failing test for unsafe values in `RenderNodeComment` marker attributes, then fix the marker escaping.
+- Why it was valuable: `LinearSyncer.syncNode` uses `RenderNodeComment` for live node comments, so the prior `HiddenNodeMarker` coverage did not protect the actual emitted sync marker.
+- Files changed: `internal/timeline/render.go`, `internal/timeline/render_test.go`.
+- Tests run: `go test ./internal/timeline -run TestRenderNodeCommentEscapesMarkerValues -count=1 -v` (failed before the fix, passed after), `go test ./internal/timeline -count=1`, `go test ./... -count=1 -timeout=20m` (two unrelated flakes reproduced narrowly, third full run passed), `go test ./internal/config -run TestDebounceMultipleRapidEvents -count=1 -v`, `go test ./internal/agent -run TestOMCRunner_UsesTeamRuntime -count=1 -v`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`, `git diff --check`.
+- Commit hash: `e94b721`.
+- GitNexus impact summary: `RenderNodeComment` was LOW impact before editing with 1 direct caller (`LinearSyncer.syncNode`), 1 affected process (`Run`), and 1 affected module (`Timeline`); detect on this isolated diff did not map changed symbols.
+- Skipped high-risk alternatives: avoided node sync lifecycle and retry behavior; changed only marker string rendering after the failing test.
+- Remaining follow-up: after three slices, replan; likely stop unless a non-lifecycle deterministic bug is still visible.
