@@ -139,6 +139,67 @@ func TestStoreRestartLoadAndMalformedRecords(t *testing.T) {
 	assert.Equal(t, "hash-1", snapshot.Nodes[0].ContentHash)
 }
 
+func TestStoreLoadSnapshotBoundaryRecords(t *testing.T) {
+	tests := []struct {
+		name      string
+		lines     []string
+		wantRuns  []string
+		wantNodes []string
+	}{
+		{
+			name: "ignores unknown record type",
+			lines: []string{
+				`{"type":"run_upsert","timestamp":"2026-05-07T20:00:00Z","run_summary":{"issue_id":"ENG-8","run_id":"run-1","status":"running"}}`,
+				`{"type":"unknown","timestamp":"2026-05-07T20:00:01Z","run_summary":{"issue_id":"ENG-8","run_id":"ignored","status":"failed"}}`,
+			},
+			wantRuns:  []string{"run-1"},
+			wantNodes: []string{},
+		},
+		{
+			name: "loads final record without trailing newline",
+			lines: []string{
+				`{"type":"run_upsert","timestamp":"2026-05-07T20:00:00Z","run_summary":{"issue_id":"ENG-8","run_id":"run-1","status":"running"}}`,
+				`{"type":"node_upsert","timestamp":"2026-05-07T20:00:01Z","node_summary":{"issue_id":"ENG-8","run_id":"run-1","node_id":"node-1","attempt":1,"status":"completed","content_hash":"hash-1"}}`,
+			},
+			wantRuns:  []string{"run-1"},
+			wantNodes: []string{"node-1"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			store := NewStore(dir)
+			issueID := "ENG-8"
+			path := filepath.Join(dir, issueID+".jsonl")
+			raw := strings.Join(tt.lines, "\n")
+			require.NoError(t, os.WriteFile(path, []byte(raw), 0o644))
+
+			snapshot, err := store.LoadSnapshot(issueID)
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantRuns, runIDs(snapshot.Runs))
+			assert.Equal(t, tt.wantNodes, nodeIDs(snapshot.Nodes))
+		})
+	}
+}
+
+func runIDs(runs []WorkflowRunSummary) []string {
+	out := make([]string, 0, len(runs))
+	for _, run := range runs {
+		out = append(out, run.RunID)
+	}
+	return out
+}
+
+func nodeIDs(nodes []WorkflowNodeSummary) []string {
+	out := make([]string, 0, len(nodes))
+	for _, node := range nodes {
+		out = append(out, node.NodeID)
+	}
+	return out
+}
+
 func TestStoreSyncStateKeysIncludeTarget(t *testing.T) {
 	store := NewStore(t.TempDir())
 	issueID := "ENG-6"
