@@ -488,3 +488,14 @@
 - GitNexus impact summary: `Store.loadSnapshotNoLock` was LOW impact with 1 direct caller (`LoadSnapshot`), 2 affected processes (`LoadSnapshot`, `Run`), and 2 affected modules (`Timeline`, indirect `Orchestrator`); no production code was edited.
 - Skipped high-risk alternatives: avoided changing store locking, append behavior, or syncer lifecycle code.
 - Remaining follow-up: remaining candidates are mostly lower-value helper coverage or lifecycle-adjacent syncer tests; prefer stopping after final verification unless a stronger bug appears.
+
+## 2026-05-21 - Timeline retry-after helper coverage
+
+- Task selected: add table-driven coverage for `retryAfterTime`.
+- Why it was valuable: timeline sync retry persistence depends on treating only positive `tracker.RateLimitError` delays as retry times, including wrapped errors, while leaving generic, nil, zero, and negative cases as no retry delay.
+- Files changed: `internal/timeline/linear_syncer_test.go`.
+- Tests run: `go test ./internal/timeline -run TestRetryAfterTime -count=1 -v`, `go test ./internal/timeline -count=1`, `go test ./... -count=1 -timeout=20m`, `npm run gitnexus:detect` (blocked by multi-repo ambiguity), `npm run gitnexus -- detect-changes --repo contrabass`, `git diff --check`.
+- Commit hash: `0101c9b`.
+- GitNexus impact summary: `retryAfterTime` was LOW impact with 2 direct callers (`LinearSyncer.ensureRoot`, `LinearSyncer.markNodeFailed`), 1 affected process (`Run`), and 1 affected module (`Timeline`); no production code was edited.
+- Skipped high-risk alternatives: avoided `LinearSyncer.Run`/`Drain` lifecycle and timing-heavy queue processing.
+- Remaining follow-up: only `Notify` queue behavior remains plausibly useful; continue only if it can stay deterministic and test-only.
