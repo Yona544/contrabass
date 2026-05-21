@@ -202,6 +202,44 @@ func TestLinearSyncerRecordsNonFallbackReplyErrors(t *testing.T) {
 	assert.Contains(t, snapshot.NodeSyncStates[0].LastError, "linear down")
 }
 
+func TestLinearSyncerNotify(t *testing.T) {
+	t.Run("nil receiver is no-op", func(t *testing.T) {
+		var syncer *LinearSyncer
+
+		assert.NotPanics(t, func() {
+			syncer.Notify("issue-1")
+		})
+	})
+
+	t.Run("blank issue id is ignored", func(t *testing.T) {
+		syncer := NewLinearSyncer(nil, nil, LinearSyncerConfig{QueueSize: 1})
+
+		syncer.Notify("")
+
+		assert.Empty(t, syncer.queue)
+	})
+
+	t.Run("enqueues issue id when space is available", func(t *testing.T) {
+		syncer := NewLinearSyncer(nil, nil, LinearSyncerConfig{QueueSize: 1})
+
+		syncer.Notify("issue-1")
+
+		require.Len(t, syncer.queue, 1)
+		assert.Equal(t, "issue-1", <-syncer.queue)
+	})
+
+	t.Run("drops issue id when queue is full", func(t *testing.T) {
+		syncer := NewLinearSyncer(nil, nil, LinearSyncerConfig{QueueSize: 1})
+
+		syncer.Notify("issue-1")
+		syncer.Notify("issue-2")
+
+		require.Len(t, syncer.queue, 1)
+		assert.Equal(t, "issue-1", <-syncer.queue)
+		assert.Empty(t, syncer.queue)
+	})
+}
+
 func TestRetryAfterTime(t *testing.T) {
 	tests := []struct {
 		name      string
