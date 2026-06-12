@@ -117,7 +117,10 @@ progress in a terminal UI built with the Charm stack.`,
 
 	_ = cmd.MarkFlagRequired("config")
 
-	cmd.AddCommand(newTeamCmd(), newBoardCmd(), newDoctorCmd(), newInitCmd(), newValidateCmd())
+	cmd.AddCommand(
+		newTeamCmd(), newBoardCmd(), newDoctorCmd(), newInitCmd(), newValidateCmd(),
+		newRunCmd(), newResumeCmd(), newReviewCmd(), newScanCmd(),
+	)
 
 	return cmd
 }
@@ -305,6 +308,7 @@ func run(cfgPath string, noTUI bool, logFile, logLevel string, dryRun bool, port
 	var historyStore *history.Store
 	if cfg.HistoryEnabled() {
 		historyStore = history.NewStore(cfg.HistoryDir())
+		historyStore.SetPricing(modelPricing(cfg))
 		orch.SetRunHistory(historyStore)
 	}
 	timelineStore := timeline.NewStore(cfg.WorkflowTimelineDir())
@@ -641,12 +645,34 @@ func newNotifier(cfg *config.WorkflowConfig, logger *log.Logger) *notify.Notifie
 		events = cfg.Notifications.Events
 	}
 
+	desktop := false
+	if cfg != nil {
+		desktop = cfg.Notifications.Desktop
+	}
+
 	return notify.New(notify.Config{
 		SlackWebhookURL: slackURL,
 		WebhookURL:      webhookURL,
+		Desktop:         desktop,
 		Events:          events,
 		Logger:          logger,
 	})
+}
+
+// modelPricing converts the workflow pricing section into the history
+// store's price-table overlay.
+func modelPricing(cfg *config.WorkflowConfig) map[string]history.ModelPrice {
+	if cfg == nil || len(cfg.Pricing) == 0 {
+		return nil
+	}
+	prices := make(map[string]history.ModelPrice, len(cfg.Pricing))
+	for model, price := range cfg.Pricing {
+		prices[model] = history.ModelPrice{
+			InputPerMTok:  price.InputPerMTok,
+			OutputPerMTok: price.OutputPerMTok,
+		}
+	}
+	return prices
 }
 
 // jiraConfig assembles the Jira tracker config, preferring JIRA_EMAIL and

@@ -110,7 +110,7 @@ func (o *Orchestrator) SetWorkflowTimeline(store *timeline.Store, suppressLinear
 type DispatchGate interface {
 	AllowDispatch(now time.Time) (ok bool, reason string)
 	RecordStart(now time.Time)
-	RecordCompletion(succeeded bool, tokens int64)
+	RecordCompletion(succeeded bool, tokens int64, costUSD float64)
 	Tick(now time.Time) (summary string, closed bool)
 }
 
@@ -572,7 +572,15 @@ func (o *Orchestrator) dispatchIssue(
 		logging.LogIssueEvent(o.logger, issue.ID, "phase_transition_failed", "from", runAttempt.Phase.String(), "to", types.BuildingPrompt.String(), "err", phaseErr)
 	}
 
-	prompt, err := config.RenderPrompt(cfg.PromptTemplate, issue)
+	promptTemplate := cfg.PromptTemplate
+	if dir := cfg.PromptsDir(); dir != "" {
+		if recipe, recipeName, ok := config.ResolvePromptRecipe(dir, issue.Labels); ok {
+			promptTemplate = recipe
+			logging.LogIssueEvent(o.logger, issue.ID, "prompt_recipe_selected", "recipe", recipeName)
+		}
+	}
+
+	prompt, err := config.RenderPrompt(promptTemplate, issue)
 	if err != nil {
 		if cleanupErr := o.workspace.Cleanup(ctx, issue.ID); cleanupErr != nil {
 			logging.LogIssueEvent(o.logger, issue.ID, "workspace_cleanup_failed", "stage", "prompt_render", "err", cleanupErr)

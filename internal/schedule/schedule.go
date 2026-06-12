@@ -26,6 +26,9 @@ type Config struct {
 	// (0 = unlimited). Checked before dispatch, so the cap can overshoot by
 	// the runs already in flight.
 	MaxTokens int64
+	// MaxUSD caps estimated spend per window (0 = unlimited); requires
+	// priced models, otherwise runs count as $0.
+	MaxUSD float64
 }
 
 type window struct {
@@ -39,6 +42,7 @@ type Schedule struct {
 	days      map[time.Weekday]bool
 	maxIssues int
 	maxTokens int64
+	maxUSD    float64
 
 	mu              sync.Mutex
 	active          bool
@@ -47,6 +51,7 @@ type Schedule struct {
 	succeeded       int
 	failed          int
 	tokensUsed      int64
+	usdUsed         float64
 	exhaustedLogged bool
 }
 
@@ -64,6 +69,7 @@ func New(cfg Config) (*Schedule, error) {
 	s := &Schedule{
 		maxIssues: cfg.MaxIssues,
 		maxTokens: cfg.MaxTokens,
+		maxUSD:    cfg.MaxUSD,
 	}
 
 	for _, raw := range cfg.Windows {
@@ -171,6 +177,9 @@ func (s *Schedule) AllowDispatch(now time.Time) (bool, string) {
 	if s.maxTokens > 0 && s.tokensUsed >= s.maxTokens {
 		return false, fmt.Sprintf("token budget exhausted (%d/%d)", s.tokensUsed, s.maxTokens)
 	}
+	if s.maxUSD > 0 && s.usdUsed >= s.maxUSD {
+		return false, fmt.Sprintf("cost budget exhausted ($%.2f/$%.2f)", s.usdUsed, s.maxUSD)
+	}
 	return true, ""
 }
 
@@ -181,9 +190,9 @@ func (s *Schedule) RecordStart(time.Time) {
 	s.issuesStarted++
 }
 
-// RecordCompletion accumulates outcome and token usage for the summary and
-// the token budget.
-func (s *Schedule) RecordCompletion(succeeded bool, tokens int64) {
+// RecordCompletion accumulates outcome, token usage, and estimated cost for
+// the summary and the budgets.
+func (s *Schedule) RecordCompletion(succeeded bool, tokens int64, costUSD float64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if succeeded {
@@ -193,6 +202,9 @@ func (s *Schedule) RecordCompletion(succeeded bool, tokens int64) {
 	}
 	if tokens > 0 {
 		s.tokensUsed += tokens
+	}
+	if costUSD > 0 {
+		s.usdUsed += costUSD
 	}
 }
 
@@ -213,13 +225,14 @@ func (s *Schedule) Tick(now time.Time) (string, bool) {
 		s.succeeded = 0
 		s.failed = 0
 		s.tokensUsed = 0
+		s.usdUsed = 0
 		s.exhaustedLogged = false
 		return "", false
 	case !active && s.active:
 		s.active = false
 		summary := fmt.Sprintf(
-			"Schedule window closed (opened %s): %d runs started, %d succeeded, %d failed, %d tokens used",
-			s.windowOpenedAt.Format("Mon 15:04"), s.issuesStarted, s.succeeded, s.failed, s.tokensUsed,
+			"Schedule window closed (opened %s): %d runs started, %d succeeded, %d failed, %d tokens used ($%.2f)",
+			s.windowOpenedAt.Format("Mon 15:04"), s.issuesStarted, s.succeeded, s.failed, s.tokensUsed, s.usdUsed,
 		)
 		return summary, true
 	default:

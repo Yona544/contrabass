@@ -63,6 +63,8 @@ func (o *Orchestrator) recordRunHistory(issue types.Issue, attempt types.RunAtte
 		Identifier: issue.Identifier,
 		Title:      issue.Title,
 		AgentType:  o.currentConfig().AgentType(),
+		Model:      o.effectiveModel(),
+		SessionID:  attempt.SessionID,
 		Attempt:    attempt.Attempt,
 		Phase:      attempt.Phase.String(),
 		Succeeded:  attempt.Phase == types.Succeeded,
@@ -76,4 +78,28 @@ func (o *Orchestrator) recordRunHistory(issue types.Issue, attempt types.RunAtte
 	if err := o.history.Append(rec); err != nil {
 		logging.LogIssueEvent(o.logger, issue.ID, "history_append_failed", "err", err)
 	}
+}
+
+// effectiveModel resolves the model the configured agent actually runs with,
+// preferring agent-specific overrides over the top-level model field.
+func (o *Orchestrator) effectiveModel() string {
+	cfg := o.currentConfig()
+	switch cfg.AgentType() {
+	case "claude":
+		return cfg.ClaudeModel()
+	case "codex":
+		return cfg.CodexModel()
+	default:
+		model, _ := cfg.Model()
+		return model
+	}
+}
+
+// runCostUSD estimates the dollar cost of an attempt via the history store's
+// pricing table; 0 when history is disabled or the model is unpriced.
+func (o *Orchestrator) runCostUSD(attempt types.RunAttempt) float64 {
+	if o.history == nil {
+		return 0
+	}
+	return o.history.Cost(o.effectiveModel(), attempt.TokensIn, attempt.TokensOut)
 }

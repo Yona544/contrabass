@@ -42,6 +42,9 @@ type Config struct {
 	SlackWebhookURL string
 	// WebhookURL receives the structured JSON envelope for custom sinks.
 	WebhookURL string
+	// Desktop shows OS-native notifications (Windows toast, macOS
+	// notification center, notify-send) — the solo-user sink.
+	Desktop bool
 	// Events filters by web.WebEvent Type (e.g. "AgentFinished",
 	// "run_error"). Empty means defaultEvents; ["*"] forwards everything.
 	Events     []string
@@ -52,6 +55,7 @@ type Config struct {
 type Notifier struct {
 	slackURL   string
 	webhookURL string
+	desktop    bool
 	events     map[string]struct{}
 	all        bool
 	client     *http.Client
@@ -99,6 +103,7 @@ func New(cfg Config) *Notifier {
 	return &Notifier{
 		slackURL:   strings.TrimSpace(cfg.SlackWebhookURL),
 		webhookURL: strings.TrimSpace(cfg.WebhookURL),
+		desktop:    cfg.Desktop,
 		events:     events,
 		all:        all,
 		client:     client,
@@ -109,7 +114,7 @@ func New(cfg Config) *Notifier {
 
 // Enabled reports whether any sink is configured.
 func (n *Notifier) Enabled() bool {
-	return n != nil && (n.slackURL != "" || n.webhookURL != "")
+	return n != nil && (n.slackURL != "" || n.webhookURL != "" || n.desktop)
 }
 
 // Start drains the queue until ctx is done. Posting happens here so Notify
@@ -190,6 +195,15 @@ func (n *Notifier) post(ctx context.Context, evt web.WebEvent) {
 		}
 		if err := n.postJSON(ctx, n.webhookURL, body); err != nil {
 			n.logger.Warn("webhook notification failed", "type", evt.Type, "err", err)
+		}
+	}
+	if n.desktop {
+		title := "contrabass"
+		if issueID != "" {
+			title = "contrabass · " + issueID
+		}
+		if err := notifyDesktop(title, message); err != nil {
+			n.logger.Warn("desktop notification failed", "type", evt.Type, "err", err)
 		}
 	}
 }

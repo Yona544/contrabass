@@ -88,14 +88,29 @@ func TestAllowDispatchTokenBudget(t *testing.T) {
 	require.NoError(t, err)
 	now := clock(time.Monday, 11, 0)
 
-	s.RecordCompletion(true, 600)
+	s.RecordCompletion(true, 600, 0)
 	ok, _ := s.AllowDispatch(now)
 	require.True(t, ok, "under budget still dispatches")
 
-	s.RecordCompletion(false, 600)
+	s.RecordCompletion(false, 600, 0)
 	ok, reason := s.AllowDispatch(now)
 	assert.False(t, ok)
 	assert.Contains(t, reason, "token budget exhausted (1200/1000)")
+}
+
+func TestAllowDispatchCostBudget(t *testing.T) {
+	s, err := New(Config{MaxUSD: 5})
+	require.NoError(t, err)
+	now := clock(time.Monday, 11, 0)
+
+	s.RecordCompletion(true, 100, 3.0)
+	ok, _ := s.AllowDispatch(now)
+	require.True(t, ok)
+
+	s.RecordCompletion(true, 100, 2.5)
+	ok, reason := s.AllowDispatch(now)
+	assert.False(t, ok)
+	assert.Contains(t, reason, "cost budget exhausted ($5.50/$5.00)")
 }
 
 func TestTickWindowLifecycleAndSummary(t *testing.T) {
@@ -108,9 +123,9 @@ func TestTickWindowLifecycleAndSummary(t *testing.T) {
 	assert.Empty(t, summary)
 
 	s.RecordStart(clock(time.Monday, 9, 5))
-	s.RecordCompletion(true, 200)
+	s.RecordCompletion(true, 200, 0)
 	s.RecordStart(clock(time.Monday, 9, 20))
-	s.RecordCompletion(false, 300)
+	s.RecordCompletion(false, 300, 0)
 
 	// Still inside the window: no summary.
 	_, closed = s.Tick(clock(time.Monday, 9, 30))

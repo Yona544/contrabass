@@ -81,34 +81,50 @@ var (
 )
 
 type WorkflowConfig struct {
-	MaxConcurrencyRaw    int                 `yaml:"max_concurrency"`
-	PollIntervalMsRaw    int                 `yaml:"poll_interval_ms"`
-	MaxRetryBackoffMsRaw int                 `yaml:"max_retry_backoff_ms"`
-	ModelRaw             string              `yaml:"model"`
-	ProjectURLRaw        string              `yaml:"project_url"`
-	AgentTimeoutMsRaw    int                 `yaml:"agent_timeout_ms"`
-	StallTimeoutMsRaw    int                 `yaml:"stall_timeout_ms"`
-	Tracker              TrackerConfig       `yaml:"tracker"`
-	Polling              PollingConfig       `yaml:"polling"`
-	Workspace            WorkspaceConfig     `yaml:"workspace"`
-	Hooks                HooksConfig         `yaml:"hooks"`
-	Codex                CodexConfig         `yaml:"codex"`
-	Claude               ClaudeConfig        `yaml:"claude"`
-	Agent                AgentConfig         `yaml:"agent"`
-	OpenCode             OpenCodeConfig      `yaml:"opencode"`
-	OMX                  OMXConfig           `yaml:"omx"`
-	OMC                  OMCConfig           `yaml:"omc"`
-	Linear               LinearConfigSection `yaml:"linear"`
-	Jira                 JiraConfigSection   `yaml:"jira"`
-	OhMyOpenCode         OhMyOpenCodeConfig  `yaml:"oh_my_opencode"`
-	Team                 TeamSectionConfig   `yaml:"team"`
-	Timeline             TimelineConfig      `yaml:"timeline"`
-	Web                  WebConfig           `yaml:"web"`
-	Notifications        NotificationsConfig `yaml:"notifications"`
-	PullRequest          PullRequestConfig   `yaml:"pull_request"`
-	Schedule             ScheduleConfig      `yaml:"schedule"`
-	History              HistoryConfig       `yaml:"history"`
-	PromptTemplate       string              `yaml:"-"`
+	MaxConcurrencyRaw    int                         `yaml:"max_concurrency"`
+	PollIntervalMsRaw    int                         `yaml:"poll_interval_ms"`
+	MaxRetryBackoffMsRaw int                         `yaml:"max_retry_backoff_ms"`
+	ModelRaw             string                      `yaml:"model"`
+	ProjectURLRaw        string                      `yaml:"project_url"`
+	AgentTimeoutMsRaw    int                         `yaml:"agent_timeout_ms"`
+	StallTimeoutMsRaw    int                         `yaml:"stall_timeout_ms"`
+	Tracker              TrackerConfig               `yaml:"tracker"`
+	Polling              PollingConfig               `yaml:"polling"`
+	Workspace            WorkspaceConfig             `yaml:"workspace"`
+	Hooks                HooksConfig                 `yaml:"hooks"`
+	Codex                CodexConfig                 `yaml:"codex"`
+	Claude               ClaudeConfig                `yaml:"claude"`
+	Agent                AgentConfig                 `yaml:"agent"`
+	OpenCode             OpenCodeConfig              `yaml:"opencode"`
+	OMX                  OMXConfig                   `yaml:"omx"`
+	OMC                  OMCConfig                   `yaml:"omc"`
+	Linear               LinearConfigSection         `yaml:"linear"`
+	Jira                 JiraConfigSection           `yaml:"jira"`
+	OhMyOpenCode         OhMyOpenCodeConfig          `yaml:"oh_my_opencode"`
+	Team                 TeamSectionConfig           `yaml:"team"`
+	Timeline             TimelineConfig              `yaml:"timeline"`
+	Web                  WebConfig                   `yaml:"web"`
+	Notifications        NotificationsConfig         `yaml:"notifications"`
+	PullRequest          PullRequestConfig           `yaml:"pull_request"`
+	Schedule             ScheduleConfig              `yaml:"schedule"`
+	History              HistoryConfig               `yaml:"history"`
+	Pricing              map[string]ModelPriceConfig `yaml:"pricing"`
+	Prompts              PromptsConfig               `yaml:"prompts"`
+	PromptTemplate       string                      `yaml:"-"`
+}
+
+// PromptsConfig points at a directory of per-label prompt recipes: an issue
+// labeled "bugfix" renders <dir>/bugfix.md instead of the workflow body.
+type PromptsConfig struct {
+	Dir string `yaml:"dir"`
+}
+
+// PromptsDir returns the recipes directory; empty disables recipes.
+func (c *WorkflowConfig) PromptsDir() string {
+	if c == nil {
+		return ""
+	}
+	return strings.TrimSpace(c.Prompts.Dir)
 }
 
 // HistoryConfig controls the persistent run log feeding /api/v1/history and
@@ -125,6 +141,14 @@ type ScheduleConfig struct {
 	Days      []string `yaml:"days"`
 	MaxIssues int      `yaml:"max_issues"`
 	MaxTokens int64    `yaml:"max_tokens"`
+	MaxUSD    float64  `yaml:"max_usd"`
+}
+
+// ModelPriceConfig overrides or extends the built-in per-model price table
+// (USD per million tokens), keyed by model name or prefix.
+type ModelPriceConfig struct {
+	InputPerMTok  float64 `yaml:"input_per_mtok"`
+	OutputPerMTok float64 `yaml:"output_per_mtok"`
 }
 
 // ScheduleEnabled reports whether any schedule constraint is configured.
@@ -133,7 +157,7 @@ func (c *WorkflowConfig) ScheduleEnabled() bool {
 		return false
 	}
 	return len(c.Schedule.Windows) > 0 || len(c.Schedule.Days) > 0 ||
-		c.Schedule.MaxIssues > 0 || c.Schedule.MaxTokens > 0
+		c.Schedule.MaxIssues > 0 || c.Schedule.MaxTokens > 0 || c.Schedule.MaxUSD > 0
 }
 
 // PullRequestConfig turns verified successful runs into pull requests via
@@ -152,6 +176,7 @@ type PullRequestConfig struct {
 type NotificationsConfig struct {
 	SlackWebhookURL string   `yaml:"slack_webhook_url"`
 	WebhookURL      string   `yaml:"webhook_url"`
+	Desktop         bool     `yaml:"desktop"`
 	Events          []string `yaml:"events"`
 }
 
@@ -332,6 +357,7 @@ func (c *WorkflowConfig) Clone() *WorkflowConfig {
 	cfg.Notifications.Events = slices.Clone(c.Notifications.Events)
 	cfg.Schedule.Windows = slices.Clone(c.Schedule.Windows)
 	cfg.Schedule.Days = slices.Clone(c.Schedule.Days)
+	cfg.Pricing = maps.Clone(c.Pricing)
 	cfg.Claude.AllowedTools = slices.Clone(c.Claude.AllowedTools)
 	cfg.Claude.ExtraArgs = slices.Clone(c.Claude.ExtraArgs)
 	cfg.OhMyOpenCode.Plugins = slices.Clone(c.OhMyOpenCode.Plugins)

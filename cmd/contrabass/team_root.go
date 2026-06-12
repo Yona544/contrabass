@@ -237,7 +237,7 @@ func runTeamExecutionLoop(
 				runErr := inner(opts)
 				// Team runs do not surface token counts at this layer, so
 				// only the issue budget advances in team mode.
-				gate.RecordCompletion(runErr == nil, 0)
+				gate.RecordCompletion(runErr == nil, 0, 0)
 				return runErr
 			}
 		}

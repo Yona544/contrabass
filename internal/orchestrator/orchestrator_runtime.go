@@ -121,7 +121,9 @@ func (o *Orchestrator) completeRun(ctx context.Context, issueID string, doneErr 
 	})
 
 	if o.gate != nil {
-		o.gate.RecordCompletion(finalAttempt.Phase == types.Succeeded, finalAttempt.TokensIn+finalAttempt.TokensOut)
+		o.gate.RecordCompletion(finalAttempt.Phase == types.Succeeded,
+			finalAttempt.TokensIn+finalAttempt.TokensOut,
+			o.runCostUSD(finalAttempt))
 	}
 	o.recordRunHistory(entry.issue, finalAttempt)
 

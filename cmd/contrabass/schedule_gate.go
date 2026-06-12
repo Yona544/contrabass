@@ -19,6 +19,7 @@ func buildScheduleGate(cfg *config.WorkflowConfig) (*schedule.Schedule, error) {
 		Days:      cfg.Schedule.Days,
 		MaxIssues: cfg.Schedule.MaxIssues,
 		MaxTokens: cfg.Schedule.MaxTokens,
+		MaxUSD:    cfg.Schedule.MaxUSD,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("parsing schedule config: %w", err)

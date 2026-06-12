@@ -18,12 +18,16 @@ import (
 
 const runsFileName = "runs.jsonl"
 
-// Record is one finished agent run attempt.
+// Record is one finished agent run attempt. CostUSD is computed from the
+// pricing table at read time (not persisted) so price changes apply
+// retroactively.
 type Record struct {
 	IssueID    string    `json:"issue_id"`
 	Identifier string    `json:"identifier,omitempty"`
 	Title      string    `json:"title,omitempty"`
 	AgentType  string    `json:"agent_type,omitempty"`
+	Model      string    `json:"model,omitempty"`
+	SessionID  string    `json:"session_id,omitempty"`
 	Attempt    int       `json:"attempt"`
 	Phase      string    `json:"phase"`
 	Succeeded  bool      `json:"succeeded"`
@@ -33,16 +37,18 @@ type Record struct {
 	StartedAt  time.Time `json:"started_at"`
 	FinishedAt time.Time `json:"finished_at"`
 	DurationMs int64     `json:"duration_ms"`
+	CostUSD    float64   `json:"cost_usd"`
 }
 
 // AgentStats aggregates outcomes for one agent type.
 type AgentStats struct {
-	Runs          int   `json:"runs"`
-	Succeeded     int   `json:"succeeded"`
-	Failed        int   `json:"failed"`
-	TokensIn      int64 `json:"tokens_in"`
-	TokensOut     int64 `json:"tokens_out"`
-	AvgDurationMs int64 `json:"avg_duration_ms"`
+	Runs          int     `json:"runs"`
+	Succeeded     int     `json:"succeeded"`
+	Failed        int     `json:"failed"`
+	TokensIn      int64   `json:"tokens_in"`
+	TokensOut     int64   `json:"tokens_out"`
+	AvgDurationMs int64   `json:"avg_duration_ms"`
+	CostUSD       float64 `json:"cost_usd"`
 }
 
 // Analytics summarizes the whole run history.
@@ -53,14 +59,17 @@ type Analytics struct {
 	TokensIn      int64                 `json:"tokens_in"`
 	TokensOut     int64                 `json:"tokens_out"`
 	AvgDurationMs int64                 `json:"avg_duration_ms"`
+	CostUSD       float64               `json:"cost_usd"`
+	UnpricedRuns  int                   `json:"unpriced_runs"`
 	ByAgent       map[string]AgentStats `json:"by_agent"`
 	GeneratedAt   time.Time             `json:"generated_at"`
 }
 
 // Store is a process-safe (single writer) append-only run log.
 type Store struct {
-	mu   sync.Mutex
-	path string
+	mu      sync.Mutex
+	path    string
+	pricing map[string]ModelPrice
 }
 
 func NewStore(dir string) *Store {
@@ -134,6 +143,10 @@ func (s *Store) Analytics() (Analytics, error) {
 		}
 		analytics.TokensIn += rec.TokensIn
 		analytics.TokensOut += rec.TokensOut
+		analytics.CostUSD += rec.CostUSD
+		if rec.CostUSD == 0 && rec.TokensIn+rec.TokensOut > 0 {
+			analytics.UnpricedRuns++
+		}
 		totalDuration += rec.DurationMs
 
 		agent := rec.AgentType
@@ -149,6 +162,7 @@ func (s *Store) Analytics() (Analytics, error) {
 		}
 		stats.TokensIn += rec.TokensIn
 		stats.TokensOut += rec.TokensOut
+		stats.CostUSD += rec.CostUSD
 		durations[agent] += rec.DurationMs
 		analytics.ByAgent[agent] = stats
 	}
@@ -167,6 +181,18 @@ func (s *Store) Analytics() (Analytics, error) {
 }
 
 func (s *Store) readAll() ([]Record, error) {
+	records, err := s.readRaw()
+	if err != nil {
+		return nil, err
+	}
+	// Cost is derived outside the read lock: Cost locks the mutex itself.
+	for i := range records {
+		records[i].CostUSD = s.Cost(records[i].Model, records[i].TokensIn, records[i].TokensOut)
+	}
+	return records, nil
+}
+
+func (s *Store) readRaw() ([]Record, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
