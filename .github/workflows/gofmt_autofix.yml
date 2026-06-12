@@ -2,13 +2,13 @@ name: Go Format Auto-fix
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
     paths:
       - "**/*.go"
       - "go.mod"
       - "go.sum"
   pull_request:
-    branches: [main, develop]
+    branches: [main]
     paths:
       - "**/*.go"
       - "go.mod"
