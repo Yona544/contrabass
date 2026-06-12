@@ -43,10 +43,10 @@ type TimelineProvider interface {
 }
 
 type Server struct {
-	httpServer       *http.Server
-	hub              *hub.Hub[WebEvent]
-	webEvents        chan<- WebEvent
-	dashboardFS      fs.FS
+	httpServer         *http.Server
+	hub                *hub.Hub[WebEvent]
+	webEvents          chan<- WebEvent
+	dashboardFS        fs.FS
 	listenAddr         string
 	authToken          string
 	snapshotProvider   SnapshotProvider
