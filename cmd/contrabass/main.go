@@ -21,6 +21,7 @@ import (
 
 	contrabass "github.com/junhoyeo/contrabass"
 	"github.com/junhoyeo/contrabass/internal/config"
+	"github.com/junhoyeo/contrabass/internal/history"
 	"github.com/junhoyeo/contrabass/internal/hub"
 	"github.com/junhoyeo/contrabass/internal/logging"
 	"github.com/junhoyeo/contrabass/internal/notify"
@@ -116,7 +117,7 @@ progress in a terminal UI built with the Charm stack.`,
 
 	_ = cmd.MarkFlagRequired("config")
 
-	cmd.AddCommand(teamCmd, newBoardCmd(), newDoctorCmd())
+	cmd.AddCommand(teamCmd, newBoardCmd(), newDoctorCmd(), newInitCmd(), newValidateCmd())
 
 	return cmd
 }
@@ -301,6 +302,11 @@ func run(cfgPath string, noTUI bool, logFile, logLevel string, dryRun bool, port
 	if gate != nil {
 		orch.SetDispatchGate(gate)
 	}
+	var historyStore *history.Store
+	if cfg.HistoryEnabled() {
+		historyStore = history.NewStore(cfg.HistoryDir())
+		orch.SetRunHistory(historyStore)
+	}
 	timelineStore := timeline.NewStore(cfg.WorkflowTimelineDir())
 	orch.SetWorkflowTimeline(timelineStore, cfg.LinearSyncCommentsEnabled())
 	var linearSyncer *timeline.LinearSyncer
@@ -369,6 +375,10 @@ func run(cfgPath string, noTUI bool, logFile, logLevel string, dryRun bool, port
 		srv := web.NewServer(webOpts.ListenAddr, orch, h, dashboardFS)
 		srv.SetAuthToken(webOpts.AuthToken)
 		srv.SetAgentStopper(orch)
+		srv.SetDispatchController(orch)
+		if historyStore != nil {
+			srv.SetHistoryProvider(historyStore)
+		}
 		if detailProvider, ok := trackerClient.(tracker.IssueDetailProvider); ok {
 			srv.SetIssueDetailProvider(detailProvider)
 		}

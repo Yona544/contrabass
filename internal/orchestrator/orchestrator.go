@@ -14,6 +14,7 @@ import (
 
 	"github.com/junhoyeo/contrabass/internal/agent"
 	"github.com/junhoyeo/contrabass/internal/config"
+	"github.com/junhoyeo/contrabass/internal/history"
 	"github.com/junhoyeo/contrabass/internal/logging"
 	"github.com/junhoyeo/contrabass/internal/timeline"
 	"github.com/junhoyeo/contrabass/internal/tracker"
@@ -74,6 +75,9 @@ type Orchestrator struct {
 	prConfig PullRequestConfig
 	prExec   prExecutor
 	gate     DispatchGate
+	history  *history.Store
+
+	dispatchPaused atomic.Bool
 
 	mu           sync.Mutex
 	shutdownOnce sync.Once
@@ -239,6 +243,9 @@ func (o *Orchestrator) runCycle(ctx context.Context, supervisor *errgroup.Group,
 	openIDs := buildOpenIDSet(issues)
 
 	allowDispatch, gateReason := true, ""
+	if o.dispatchPaused.Load() {
+		allowDispatch, gateReason = false, "dispatch paused via control plane"
+	}
 	if o.gate != nil {
 		if summary, closed := o.gate.Tick(time.Now()); closed {
 			logging.LogOrchestratorEvent(o.logger, "schedule_window_closed", "summary", summary)
@@ -248,7 +255,9 @@ func (o *Orchestrator) runCycle(ctx context.Context, supervisor *errgroup.Group,
 				Data:      ScheduleWindowClosed{Summary: summary},
 			})
 		}
-		allowDispatch, gateReason = o.gate.AllowDispatch(time.Now())
+		if allowDispatch {
+			allowDispatch, gateReason = o.gate.AllowDispatch(time.Now())
+		}
 	}
 
 	if allowDispatch {

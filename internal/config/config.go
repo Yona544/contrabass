@@ -107,7 +107,15 @@ type WorkflowConfig struct {
 	Notifications        NotificationsConfig `yaml:"notifications"`
 	PullRequest          PullRequestConfig   `yaml:"pull_request"`
 	Schedule             ScheduleConfig      `yaml:"schedule"`
+	History              HistoryConfig       `yaml:"history"`
 	PromptTemplate       string              `yaml:"-"`
+}
+
+// HistoryConfig controls the persistent run log feeding /api/v1/history and
+// /api/v1/analytics. Enabled defaults to true (local JSONL, negligible cost).
+type HistoryConfig struct {
+	Enabled *bool  `yaml:"enabled"`
+	Dir     string `yaml:"dir"`
 }
 
 // ScheduleConfig gates dispatch to time windows with per-window budgets,
@@ -337,7 +345,26 @@ func (c *WorkflowConfig) Clone() *WorkflowConfig {
 		draft := *c.PullRequest.Draft
 		cfg.PullRequest.Draft = &draft
 	}
+	if c.History.Enabled != nil {
+		enabled := *c.History.Enabled
+		cfg.History.Enabled = &enabled
+	}
 	return &cfg
+}
+
+// HistoryEnabled defaults to true — the run log is local JSONL and cheap.
+func (c *WorkflowConfig) HistoryEnabled() bool {
+	if c == nil || c.History.Enabled == nil {
+		return true
+	}
+	return *c.History.Enabled
+}
+
+func (c *WorkflowConfig) HistoryDir() string {
+	if c == nil || strings.TrimSpace(c.History.Dir) == "" {
+		return ".contrabass/state/history"
+	}
+	return c.History.Dir
 }
 
 // PullRequestDraft defaults to true: auto-opened PRs should arrive as drafts

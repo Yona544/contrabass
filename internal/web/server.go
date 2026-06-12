@@ -47,13 +47,15 @@ type Server struct {
 	hub              *hub.Hub[WebEvent]
 	webEvents        chan<- WebEvent
 	dashboardFS      fs.FS
-	listenAddr       string
-	authToken        string
-	snapshotProvider SnapshotProvider
-	agentStopper     AgentStopper
-	boardProvider    BoardProvider
-	detailProvider   tracker.IssueDetailProvider
-	timelineProvider TimelineProvider
+	listenAddr         string
+	authToken          string
+	snapshotProvider   SnapshotProvider
+	agentStopper       AgentStopper
+	boardProvider      BoardProvider
+	detailProvider     tracker.IssueDetailProvider
+	timelineProvider   TimelineProvider
+	dispatchController DispatchController
+	historyProvider    HistoryProvider
 }
 
 func NewServer(
@@ -176,6 +178,11 @@ func (s *Server) newMux() *http.ServeMux {
 	mux.HandleFunc("PATCH /api/v1/board/issues/{identifier}", s.withCORS(s.handleUpdateBoardIssue))
 	mux.HandleFunc("POST /api/v1/running/{issue_id}/stop", s.withCORS(s.handleStopAgent))
 	mux.HandleFunc("POST /api/v1/refresh", s.withCORS(s.handleRefresh))
+	mux.HandleFunc("POST /api/v1/control/pause", s.withCORS(s.handlePauseDispatch))
+	mux.HandleFunc("POST /api/v1/control/resume", s.withCORS(s.handleResumeDispatch))
+	mux.HandleFunc("POST /api/v1/backoff/{issue_id}/retry", s.withCORS(s.handleRetryNow))
+	mux.HandleFunc("GET /api/v1/history", s.withCORS(s.handleHistory))
+	mux.HandleFunc("GET /api/v1/analytics", s.withCORS(s.handleAnalytics))
 	mux.HandleFunc("GET /api/v1/events", s.withCORS(s.handleSSE))
 	mux.HandleFunc("/api/v1/", s.withCORS(func(w http.ResponseWriter, _ *http.Request) {
 		writeJSONError(w, http.StatusNotFound, "not found")

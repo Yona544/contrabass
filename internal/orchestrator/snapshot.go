@@ -24,13 +24,14 @@ var (
 
 // StateSnapshot represents a thread-safe point-in-time copy of orchestrator state.
 type StateSnapshot struct {
-	Stats       Stats                  `json:"stats"`
-	Running     []RunningEntry         `json:"running"`
-	Backoff     []types.BackoffEntry   `json:"backoff"`
-	Issues      map[string]types.Issue `json:"issues"`
-	GeneratedAt time.Time              `json:"generated_at"`
-	BuildInfo   BuildInfo              `json:"build_info"`
-	Runtime     RuntimeConfigSnapshot  `json:"runtime"`
+	Stats          Stats                  `json:"stats"`
+	Running        []RunningEntry         `json:"running"`
+	Backoff        []types.BackoffEntry   `json:"backoff"`
+	Issues         map[string]types.Issue `json:"issues"`
+	GeneratedAt    time.Time              `json:"generated_at"`
+	BuildInfo      BuildInfo              `json:"build_info"`
+	Runtime        RuntimeConfigSnapshot  `json:"runtime"`
+	DispatchPaused bool                   `json:"dispatch_paused"`
 }
 
 // BuildInfo carries the ldflags-injected version metadata so dashboards and
@@ -191,13 +192,14 @@ func (o *Orchestrator) Snapshot() StateSnapshot {
 	generatedAt := time.Now()
 
 	return StateSnapshot{
-		Stats:       statsCopy,
-		Running:     runningEntries,
-		Backoff:     backoffCopy,
-		Issues:      issuesCopy,
-		GeneratedAt: generatedAt,
-		BuildInfo:   o.buildInfo,
-		Runtime:     runtimeConfigSnapshot(o.currentConfig()),
+		Stats:          statsCopy,
+		Running:        runningEntries,
+		Backoff:        backoffCopy,
+		Issues:         issuesCopy,
+		GeneratedAt:    generatedAt,
+		BuildInfo:      o.buildInfo,
+		Runtime:        runtimeConfigSnapshot(o.currentConfig()),
+		DispatchPaused: o.dispatchPaused.Load(),
 	}
 }
 
