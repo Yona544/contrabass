@@ -257,7 +257,7 @@ When working on this codebase:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **contrabass** (10737 symbols, 31886 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **contrabass** (11515 symbols, 34309 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npm run gitnexus:analyze` in terminal first. If semantic `query` results are needed on Windows, run `npm run gitnexus:analyze:embeddings`; Windows may still warn that FTS indexes are missing while using exact-scan semantic fallback. Before committing local edits, run `npm run gitnexus:detect`.
 
