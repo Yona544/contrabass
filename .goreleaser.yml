@@ -14,6 +14,7 @@ builds:
     goos:
       - linux
       - darwin
+      - windows
     goarch:
       - amd64
       - arm64
@@ -25,9 +26,21 @@ builds:
 
 archives:
   - formats: ['tar.gz']
+    format_overrides:
+      - goos: windows
+        formats: ['zip']
     files:
       - README.md
       - LICENSE
+
+scoops:
+  - repository:
+      owner: junhoyeo
+      name: scoop-contrabass
+      token: "{{ .Env.SCOOP_BUCKET_TOKEN }}"
+    homepage: https://github.com/junhoyeo/contrabass
+    description: A project-level orchestrator for AI coding agents
+    license: Apache-2.0
 
 brews:
   - repository:
