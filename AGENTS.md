@@ -79,6 +79,10 @@ Use the Go package name as the scope:
 | `workspace` | `internal/workspace` |
 | `agent` | `internal/agent` |
 | `orchestrator` | `internal/orchestrator` |
+| `schedule` | `internal/schedule` |
+| `history` | `internal/history` |
+| `notify` | `internal/notify` |
+| `web` | `internal/web` |
 | `tui` | `internal/tui` |
 | `logging` | `internal/logging` |
 | `types` | `internal/types` |

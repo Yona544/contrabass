@@ -9,10 +9,13 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 export const GO_PACKAGES = Object.freeze([
   "./cmd/contrabass",
   "./internal/config",
+  "./internal/history",
   "./internal/hooks",
   "./internal/hub",
   "./internal/ipc",
   "./internal/logging",
+  "./internal/notify",
+  "./internal/schedule",
   "./internal/timeline",
   "./internal/tmux",
   "./internal/tracker",

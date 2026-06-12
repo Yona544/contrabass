@@ -17,10 +17,15 @@ Contrabass is a terminal-first orchestrator for issue-driven agent runs, with an
 
 Today Contrabass ships with:
 
-- A Cobra CLI with TUI, headless, and optional embedded web dashboard modes
+- A Cobra CLI with TUI, headless, and optional embedded web dashboard modes, plus `contrabass init` (scaffold a workflow) and `contrabass validate` (check one without running)
 - A `WORKFLOW.md` parser with YAML front matter, Liquid prompt rendering, and `$ENV_VAR` interpolation
-- Issue tracker adapters for **Linear**, **GitHub Issues**, and a built-in **Internal Board** (local filesystem, no external service required)
-- Agent runners for **Codex app-server**, **OpenCode**, **oh-my-opencode**, **OMX (oh-my-codex)**, and **OMC (oh-my-claudecode)**
+- Issue tracker adapters for **Linear**, **GitHub Issues**, **Jira Cloud**, and a built-in **Internal Board** (local filesystem, no external service required)
+- Agent runners for **Claude Code** (native `claude -p` stream-json driver), **Codex app-server**, **OpenCode**, **oh-my-opencode**, **OMX (oh-my-codex)**, and **OMC (oh-my-claudecode)**
+- **Auto-PR**: verified successful runs push their branch and open a draft pull request via the `gh` CLI (`pull_request.enabled`)
+- **Scheduled autonomy**: dispatch windows, weekday filters, and per-window issue/token budgets (`schedule:`), with end-of-window summaries
+- **Notifications**: Slack-compatible and generic JSON webhooks for finished/failed/retried runs (`notifications:`)
+- **Run history & analytics**: every run is logged to JSONL and aggregated per agent (success rate, tokens, duration) at `/api/v1/history` and `/api/v1/analytics`
+- **Team-shared dashboard**: bind beyond localhost with `--listen` plus a mandatory token (`web.auth_token`), pause/resume dispatch and promote retries from the browser
 - Git-worktree-based workspace provisioning under `workspaces/<issue-id>` with non-git fallback for repositories without git
 - Teams: multi-agent coordination with a local task board, phased pipeline (plan → exec → verify), live TUI team table, and dual worker modes (tmux-based multi-process or goroutine-based in-process)
 - An orchestrator with claim/release, BlockedBy gating, orphan claim recovery, branch advance verification, stall detection, deterministic retry backoff, liveness snapshots with agent stage classification and ETA estimation
@@ -36,6 +41,7 @@ Today Contrabass ships with:
 - **Git** (workspace creation uses `git worktree`)
 - **tmux** (required for tmux worker mode; not needed for the default Windows goroutine mode)
 - A supported agent runtime:
+  - `claude` ([Claude Code](https://claude.com/claude-code) CLI, driven natively in headless mode)
   - `codex app-server`
   - `opencode serve`
   - [`oh-my-opencode`](https://github.com/code-yeongyu/oh-my-openagent)
@@ -44,6 +50,8 @@ Today Contrabass ships with:
 - Tracker credentials for the backend you use:
   - Linear: `LINEAR_API_KEY` or `tracker.token`
   - GitHub: `GITHUB_TOKEN`
+  - Jira: `JIRA_EMAIL` + `JIRA_API_TOKEN`
+- The `gh` CLI when `pull_request.enabled` is set (auto-PR on verified runs)
 
 From a fresh clone, run `bun install` once before using the JS/landing build and test commands.
 
@@ -53,6 +61,13 @@ From a fresh clone, run `bun install` once before using the JS/landing build and
 
 ```bash
 brew install junhoyeo/contrabass/contrabass
+```
+
+### Scoop (Windows)
+
+```powershell
+scoop bucket add contrabass https://github.com/junhoyeo/scoop-contrabass
+scoop install contrabass
 ```
 
 ### Download from GitHub Releases
@@ -96,6 +111,15 @@ Team runs default to `goroutine` worker mode on Windows, so `tmux` is not requir
 
 ## Quick start
 
+### Scaffold a workflow for your repo
+
+```bash
+contrabass init                 # prompts for tracker + agent
+contrabass validate --config WORKFLOW.md
+contrabass doctor --config WORKFLOW.md
+contrabass --config WORKFLOW.md
+```
+
 ### Run with the demo workflow
 
 ```bash
@@ -124,11 +148,25 @@ LINEAR_API_KEY=your-linear-token \
 ```text
 --config string      path to WORKFLOW.md file (required)
 --dry-run            exit after first poll cycle
+--listen string      web dashboard listen address (host:port); non-loopback
+                     hosts require web.auth_token or CONTRABASS_DASHBOARD_TOKEN
 --log-file string    log output path (default "contrabass.log")
 --log-level string   log level (debug/info/warn/error) (default "info")
 --no-tui             headless mode — skip TUI, log events to stdout
 --port int           web dashboard port (0 = disabled)
 ```
+
+### Share the dashboard with your team
+
+```bash
+CONTRABASS_DASHBOARD_TOKEN=$(openssl rand -hex 16) \
+./contrabass --config WORKFLOW.md --listen 0.0.0.0:8080
+```
+
+Teammates sign in once by opening `http://<host>:8080/?token=<token>` (the
+token is exchanged for an HttpOnly cookie); API clients send
+`Authorization: Bearer <token>`. Non-loopback binds refuse to start without a
+token. Over Tailscale, bind the tailnet address instead of `0.0.0.0`.
 
 #### Team subcommand flags
 
@@ -255,6 +293,61 @@ linear:
   dashboard rendering.
 - Disable `linear.sync_comments.enabled` to preserve legacy direct completion
   comments and avoid any Linear comment projection.
+
+### Optional feature sections
+
+```yaml
+# Native Claude Code runner
+agent:
+  type: claude
+claude:
+  binary_path: claude
+  model: claude-sonnet-4-6
+  # permission_mode: bypassPermissions   # only injected when set
+  # max_turns: 50
+  # allowed_tools: [Bash, Read, Edit, Write]
+
+# Jira Cloud tracker (credentials via JIRA_EMAIL / JIRA_API_TOKEN)
+tracker:
+  type: jira
+jira:
+  base_url: https://your-team.atlassian.net
+  project: ABC
+  # jql: project = ABC AND labels = agent-ready ORDER BY priority DESC
+  # transition_in_progress: "In Progress"   # explicit override; resolved
+  # transition_done: "Done"                 # dynamically by status category
+                                            # when unset
+
+# Auto-PR on verified successful runs (requires the gh CLI)
+pull_request:
+  enabled: true
+  # draft: true        # default true
+  # base: main
+  # remote: origin
+
+# Chat notifications (URLs via SLACK_WEBHOOK_URL / CONTRABASS_WEBHOOK_URL)
+notifications:
+  slack_webhook_url: $SLACK_WEBHOOK_URL
+  # webhook_url: https://your-sink.example/events
+  # events: [AgentFinished, BackoffEnqueued, ScheduleWindowClosed]  # "*" = all
+
+# Scheduled autonomy: dispatch only inside windows, within budgets
+schedule:
+  windows: ["22:00-06:00"]   # overnight spans supported
+  days: [fri, sat]
+  max_issues: 10
+  max_tokens: 2000000        # orchestrator mode only
+
+# Team-shared dashboard (token mandatory off-loopback)
+web:
+  listen: 0.0.0.0:8080
+  auth_token: $CONTRABASS_DASHBOARD_TOKEN
+
+# Run history feeding /api/v1/history and /api/v1/analytics (default on)
+history:
+  enabled: true
+  # dir: .contrabass/state/history
+```
 
 ### Template bindings
 
