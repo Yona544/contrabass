@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -187,15 +188,37 @@ func (s *Server) newMux() *http.ServeMux {
 
 func (s *Server) withCORS(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		if origin := r.Header.Get("Origin"); origin != "" && isLoopbackOrigin(origin) {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Add("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		}
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		next(w, r)
 	}
+}
+
+// isLoopbackOrigin reports whether origin is an http(s) origin served from
+// this machine (localhost, 127.0.0.1, [::1] — any port), such as the Vite
+// dev server. Pages on other sites must not be able to read dashboard state
+// out of the locally bound API.
+func isLoopbackOrigin(origin string) bool {
+	u, err := url.Parse(origin)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return false
+	}
+
+	host := u.Hostname()
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func (s *Server) handleGetState(w http.ResponseWriter, _ *http.Request) {

@@ -41,7 +41,7 @@ func TestHandleSSESetsHeadersAndSendsSnapshot(t *testing.T) {
 	assert.Equal(t, "text/event-stream", resp.Header.Get("Content-Type"))
 	assert.Equal(t, "no-cache", resp.Header.Get("Cache-Control"))
 	assert.Equal(t, "keep-alive", resp.Header.Get("Connection"))
-	assert.Equal(t, "*", resp.Header.Get("Access-Control-Allow-Origin"))
+	assert.Equal(t, "http://localhost:5173", resp.Header.Get("Access-Control-Allow-Origin"))
 
 	frame := readSSEFrame(t, reader)
 	assert.Contains(t, frame, "event: snapshot")
@@ -318,6 +318,7 @@ func mustOpenSSE(t *testing.T, handler http.Handler) (*http.Response, *bufio.Rea
 
 	req, err := http.NewRequest(http.MethodGet, ts.URL+"/api/v1/events", nil)
 	require.NoError(t, err)
+	req.Header.Set("Origin", "http://localhost:5173")
 
 	resp, err := ts.Client().Do(req)
 	require.NoError(t, err)

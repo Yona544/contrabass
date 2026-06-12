@@ -102,12 +102,13 @@ func TestServerRoutes(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			req := httptest.NewRequest(tt.method, tt.target, nil)
+			req.Header.Set("Origin", "http://localhost:5173")
 			rec := httptest.NewRecorder()
 
 			h.ServeHTTP(rec, req)
 
 			assert.Equal(t, tt.status, rec.Code)
-			assert.Equal(t, "*", rec.Header().Get("Access-Control-Allow-Origin"))
+			assert.Equal(t, "http://localhost:5173", rec.Header().Get("Access-Control-Allow-Origin"))
 
 			if tt.status != http.StatusAccepted {
 				assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
@@ -143,14 +144,62 @@ func TestServerCORSPreflight(t *testing.T) {
 	h := s.newMux()
 
 	req := httptest.NewRequest(http.MethodOptions, "/api/v1/refresh", nil)
+	req.Header.Set("Origin", "http://127.0.0.1:5173")
 	rec := httptest.NewRecorder()
 
 	h.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusNoContent, rec.Code)
-	assert.Equal(t, "*", rec.Header().Get("Access-Control-Allow-Origin"))
+	assert.Equal(t, "http://127.0.0.1:5173", rec.Header().Get("Access-Control-Allow-Origin"))
 	assert.Equal(t, "GET, POST, PATCH, OPTIONS", rec.Header().Get("Access-Control-Allow-Methods"))
 	assert.Equal(t, "Content-Type", rec.Header().Get("Access-Control-Allow-Headers"))
+}
+
+func TestServerCORSRejectsNonLoopbackOrigin(t *testing.T) {
+	provider := fakeSnapshotProvider{snapshot: orchestrator.StateSnapshot{Issues: map[string]types.Issue{}}}
+	s := &Server{snapshotProvider: provider, dashboardFS: nil}
+	h := s.newMux()
+
+	for _, origin := range []string{
+		"https://evil.example",
+		"http://192.168.1.50:5173",
+		"http://localhost.evil.example",
+		"file://",
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/state", nil)
+		req.Header.Set("Origin", origin)
+		rec := httptest.NewRecorder()
+
+		h.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusOK, rec.Code, "origin %q", origin)
+		assert.Empty(t, rec.Header().Get("Access-Control-Allow-Origin"), "origin %q must not be allowed", origin)
+	}
+}
+
+func TestIsLoopbackOrigin(t *testing.T) {
+	allowed := []string{
+		"http://localhost:5173",
+		"http://LOCALHOST:8080",
+		"http://127.0.0.1:8080",
+		"http://[::1]:3000",
+		"https://localhost",
+	}
+	for _, origin := range allowed {
+		assert.True(t, isLoopbackOrigin(origin), "expected %q to be allowed", origin)
+	}
+
+	denied := []string{
+		"https://evil.example",
+		"http://10.0.0.5",
+		"http://localhost.evil.example",
+		"ws://localhost:8080",
+		"null",
+		"",
+	}
+	for _, origin := range denied {
+		assert.False(t, isLoopbackOrigin(origin), "expected %q to be denied", origin)
+	}
 }
 
 func TestNormalizeListenAddr(t *testing.T) {
