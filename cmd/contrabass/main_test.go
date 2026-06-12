@@ -424,7 +424,7 @@ func TestTrackerAssigneeID(t *testing.T) {
 // --- Tests for run ---
 
 func TestRun_ConfigParseError(t *testing.T) {
-	err := run(filepath.Join(t.TempDir(), "no-such-file.md"), false, "", "info", false, 0)
+	err := run(filepath.Join(t.TempDir(), "no-such-file.md"), false, "", "info", false, 0, "")
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "parsing workflow config")
 }
@@ -450,18 +450,18 @@ Prompt.
 		logger *log.Logger,
 		noTUI bool,
 		dryRun bool,
-		port int,
+		webOpts webOptions,
 	) error {
 		called = true
 		require.NotNil(t, watcher)
 		assert.Equal(t, cfgPath, gotCfgPath)
 		assert.True(t, noTUI)
 		assert.False(t, dryRun)
-		assert.Equal(t, 0, port)
+		assert.False(t, webOpts.Enabled)
 		return nil
 	}
 
-	err := run(cfgPath, true, filepath.Join(t.TempDir(), "contrabass.log"), "info", false, 0)
+	err := run(cfgPath, true, filepath.Join(t.TempDir(), "contrabass.log"), "info", false, 0, "")
 	require.NoError(t, err)
 	assert.True(t, called)
 }
@@ -488,13 +488,13 @@ Prompt.
 		*log.Logger,
 		bool,
 		bool,
-		int,
+		webOptions,
 	) error {
 		t.Fatal("team execution path should not be called when execution_mode=single")
 		return nil
 	}
 
-	err := run(cfgPath, true, filepath.Join(t.TempDir(), "contrabass.log"), "info", true, 0)
+	err := run(cfgPath, true, filepath.Join(t.TempDir(), "contrabass.log"), "info", true, 0, "")
 	require.NoError(t, err)
 }
 
@@ -512,7 +512,7 @@ team:
 Prompt.
 `)
 
-	err := run(cfgPath, true, filepath.Join(t.TempDir(), "contrabass.log"), "info", true, 0)
+	err := run(cfgPath, true, filepath.Join(t.TempDir(), "contrabass.log"), "info", true, 0, "")
 	require.Error(t, err)
 	assert.ErrorContains(t, err, `team execution requires tracker.type internal/local, got "github"`)
 }

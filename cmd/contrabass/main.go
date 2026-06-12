@@ -23,6 +23,7 @@ import (
 	"github.com/junhoyeo/contrabass/internal/config"
 	"github.com/junhoyeo/contrabass/internal/hub"
 	"github.com/junhoyeo/contrabass/internal/logging"
+	"github.com/junhoyeo/contrabass/internal/notify"
 	"github.com/junhoyeo/contrabass/internal/orchestrator"
 	"github.com/junhoyeo/contrabass/internal/timeline"
 	"github.com/junhoyeo/contrabass/internal/tracker"
@@ -57,9 +58,9 @@ var (
 		logger *log.Logger,
 		noTUI bool,
 		dryRun bool,
-		port int,
+		webOpts webOptions,
 	) error {
-		return runTeamExecutionApp(ctx, cfgPath, watcher, logger, noTUI, dryRun, port)
+		return runTeamExecutionApp(ctx, cfgPath, watcher, logger, noTUI, dryRun, webOpts)
 	}
 	runTUIShutdownTimeout = 6 * time.Second
 )
@@ -79,6 +80,7 @@ func newRootCmd() *cobra.Command {
 		logLevel string
 		dryRun   bool
 		port     int
+		listen   string
 	)
 
 	var updateResult update.Result
@@ -100,7 +102,7 @@ progress in a terminal UI built with the Charm stack.`,
 			}
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return run(cfgPath, noTUI, logFile, logLevel, dryRun, port)
+			return run(cfgPath, noTUI, logFile, logLevel, dryRun, port, listen)
 		},
 	}
 
@@ -110,6 +112,7 @@ progress in a terminal UI built with the Charm stack.`,
 	cmd.Flags().StringVar(&logLevel, "log-level", "info", "log level (debug/info/warn/error)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "exit after first poll cycle")
 	cmd.Flags().IntVar(&port, "port", 0, "web dashboard port (0 = disabled)")
+	cmd.Flags().StringVar(&listen, "listen", "", "web dashboard listen address (host:port); non-loopback hosts require web.auth_token or CONTRABASS_DASHBOARD_TOKEN")
 
 	_ = cmd.MarkFlagRequired("config")
 
@@ -144,11 +147,16 @@ func newSessionID() string {
 }
 
 // run is the main entry point wired into the root command's RunE.
-func run(cfgPath string, noTUI bool, logFile, logLevel string, dryRun bool, port int) error {
+func run(cfgPath string, noTUI bool, logFile, logLevel string, dryRun bool, port int, listen string) error {
 	// 1. Parse and validate workflow config
 	cfg, err := config.ParseWorkflow(cfgPath)
 	if err != nil {
 		return fmt.Errorf("parsing workflow config: %w", err)
+	}
+
+	webOpts, err := resolveWebOptions(cfg, listen, port)
+	if err != nil {
+		return err
 	}
 
 	// 2. Create logger
@@ -185,7 +193,7 @@ func run(cfgPath string, noTUI bool, logFile, logLevel string, dryRun bool, port
 
 	switch cfg.TeamExecutionMode() {
 	case config.TeamExecutionModeTeam:
-		return runRootTeamExecution(ctx, cfgPath, watcher, logger, noTUI, dryRun, port)
+		return runRootTeamExecution(ctx, cfgPath, watcher, logger, noTUI, dryRun, webOpts)
 	case config.TeamExecutionModeSingle:
 		// Continue into the original single-agent orchestrator path.
 	default:
@@ -245,6 +253,12 @@ func run(cfgPath string, noTUI bool, logFile, logLevel string, dryRun bool, port
 			return fmt.Errorf("creating github tracker client: %w", githubErr)
 		}
 		trackerClient = githubClient
+	case "jira":
+		jiraClient, jiraErr := tracker.NewJiraClient(jiraConfig(cfg))
+		if jiraErr != nil {
+			return fmt.Errorf("creating jira tracker client: %w", jiraErr)
+		}
+		trackerClient = jiraClient
 	case "internal", "local":
 		trackerClient = tracker.NewLocalTracker(tracker.LocalConfig{
 			BoardDir:    cfg.LocalBoardDir(),
@@ -252,7 +266,7 @@ func run(cfgPath string, noTUI bool, logFile, logLevel string, dryRun bool, port
 			Actor:       cfg.GitHubAssignee(),
 		})
 	default:
-		return fmt.Errorf("unknown tracker type: %q (supported: internal, local, linear, github)", cfg.TrackerType())
+		return fmt.Errorf("unknown tracker type: %q (supported: internal, local, linear, github, jira)", cfg.TrackerType())
 	}
 
 	// 7. Create workspace manager (uses cwd as repo root)
@@ -309,8 +323,10 @@ func run(cfgPath string, noTUI bool, logFile, logLevel string, dryRun bool, port
 		return runDryRun(ctx, orch)
 	}
 
+	notifier := newNotifier(cfg, logger)
+
 	var h *hub.Hub[web.WebEvent]
-	if port > 0 {
+	if webOpts.Enabled || notifier.Enabled() {
 		webEvents := make(chan web.WebEvent, 256)
 		h = hub.NewHub(webEvents)
 		go h.Run(ctx)
@@ -322,6 +338,13 @@ func run(cfgPath string, noTUI bool, logFile, logLevel string, dryRun bool, port
 			close(webEvents)
 		}()
 
+		if notifier.Enabled() {
+			go notifier.Start(ctx)
+			go notifier.RunHub(ctx, h)
+		}
+	}
+
+	if webOpts.Enabled {
 		var dashboardFS fs.FS
 		if _, statErr := fs.Stat(contrabass.DashboardDistFS, "packages/dashboard/dist"); statErr == nil {
 			dashboardFS, err = fs.Sub(contrabass.DashboardDistFS, "packages/dashboard/dist")
@@ -330,13 +353,14 @@ func run(cfgPath string, noTUI bool, logFile, logLevel string, dryRun bool, port
 			}
 		}
 
-		srv := web.NewServer(fmt.Sprintf("localhost:%d", port), orch, h, dashboardFS)
+		srv := web.NewServer(webOpts.ListenAddr, orch, h, dashboardFS)
+		srv.SetAuthToken(webOpts.AuthToken)
 		srv.SetAgentStopper(orch)
 		if detailProvider, ok := trackerClient.(tracker.IssueDetailProvider); ok {
 			srv.SetIssueDetailProvider(detailProvider)
 		}
 		srv.SetTimelineProvider(timelineStore)
-		listener, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", port))
+		listener, err := net.Listen("tcp", srv.ListenAddr())
 		if err != nil {
 			return fmt.Errorf("listen web dashboard: %w", err)
 		}
@@ -346,7 +370,7 @@ func run(cfgPath string, noTUI bool, logFile, logLevel string, dryRun bool, port
 			}
 		}()
 
-		fmt.Fprintf(os.Stderr, "Web dashboard available at http://localhost:%d\n", port)
+		fmt.Fprintf(os.Stderr, "Web dashboard available at %s\n", webOpts.dashboardURL())
 	}
 
 	// 10. Select run mode
@@ -574,4 +598,58 @@ func trackerAssigneeID(cfg *config.WorkflowConfig) string {
 		return cfgAssignee
 	}
 	return os.Getenv("LINEAR_ASSIGNEE")
+}
+
+// newNotifier builds the chat-webhook notifier, preferring SLACK_WEBHOOK_URL
+// and CONTRABASS_WEBHOOK_URL from the environment so endpoints stay out of
+// committed workflow files.
+func newNotifier(cfg *config.WorkflowConfig, logger *log.Logger) *notify.Notifier {
+	slackURL := os.Getenv("SLACK_WEBHOOK_URL")
+	if slackURL == "" && cfg != nil {
+		slackURL = cfg.Notifications.SlackWebhookURL
+	}
+	webhookURL := os.Getenv("CONTRABASS_WEBHOOK_URL")
+	if webhookURL == "" && cfg != nil {
+		webhookURL = cfg.Notifications.WebhookURL
+	}
+
+	var events []string
+	if cfg != nil {
+		events = cfg.Notifications.Events
+	}
+
+	return notify.New(notify.Config{
+		SlackWebhookURL: slackURL,
+		WebhookURL:      webhookURL,
+		Events:          events,
+		Logger:          logger,
+	})
+}
+
+// jiraConfig assembles the Jira tracker config, preferring JIRA_EMAIL and
+// JIRA_API_TOKEN from the environment so credentials stay out of committed
+// workflow files.
+func jiraConfig(cfg *config.WorkflowConfig) tracker.JiraConfig {
+	email := os.Getenv("JIRA_EMAIL")
+	if email == "" {
+		email = cfg.Jira.Email
+	}
+	token := os.Getenv("JIRA_API_TOKEN")
+	if token == "" {
+		token = cfg.Jira.APIToken
+	}
+
+	return tracker.JiraConfig{
+		BaseURL:              cfg.Jira.BaseURL,
+		Email:                email,
+		APIToken:             token,
+		Project:              cfg.Jira.Project,
+		JQL:                  cfg.Jira.JQL,
+		AccountID:            cfg.Jira.AccountID,
+		Labels:               cfg.Jira.Labels,
+		TransitionInProgress: cfg.Jira.TransitionInProgress,
+		TransitionDone:       cfg.Jira.TransitionDone,
+		TransitionFailed:     cfg.Jira.TransitionFailed,
+		PageSize:             cfg.Jira.PageSize,
+	}
 }

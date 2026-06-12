@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/junhoyeo/contrabass/internal/config"
+	"github.com/junhoyeo/contrabass/internal/notify"
 	"github.com/junhoyeo/contrabass/internal/tracker"
 	"github.com/junhoyeo/contrabass/internal/types"
 	"github.com/junhoyeo/contrabass/internal/web"
@@ -72,7 +73,7 @@ Prompt.
 	}
 
 	events := make(chan types.TeamEvent, 4)
-	require.NoError(t, runTeamExecutionLoop(ctx, cfgPath, watcher, events, true))
+	require.NoError(t, runTeamExecutionLoop(ctx, cfgPath, watcher, events, notify.New(notify.Config{}), true))
 
 	dispatchedIssue, err := localTracker.GetIssue(ctx, issue.ID)
 	require.NoError(t, err)
@@ -119,13 +120,13 @@ Prompt.
 	})
 
 	called := false
-	startTeamWebServer = func(_ context.Context, _ *log.Logger, port int) (chan<- web.WebEvent, error) {
+	startTeamWebServer = func(_ context.Context, _ *log.Logger, webOpts webOptions) (chan<- web.WebEvent, error) {
 		called = true
-		assert.Equal(t, 43111, port)
+		assert.Equal(t, "localhost:43111", webOpts.ListenAddr)
 		return make(chan<- web.WebEvent, 1), nil
 	}
 
-	err = runTeamExecutionApp(context.Background(), cfgPath, watcher, nil, true, true, 43111)
+	err = runTeamExecutionApp(context.Background(), cfgPath, watcher, nil, true, true, webOptions{Enabled: true, ListenAddr: "localhost:43111"})
 	require.NoError(t, err)
 	assert.True(t, called)
 }

@@ -48,6 +48,7 @@ type Server struct {
 	webEvents        chan<- WebEvent
 	dashboardFS      fs.FS
 	listenAddr       string
+	authToken        string
 	snapshotProvider SnapshotProvider
 	agentStopper     AgentStopper
 	boardProvider    BoardProvider
@@ -135,8 +136,7 @@ func (s *Server) Serve(ctx context.Context, listener net.Listener) error {
 		return errors.New("listener is nil")
 	}
 
-	mux := s.newMux()
-	s.httpServer = &http.Server{Handler: mux}
+	s.httpServer = &http.Server{Handler: s.withAuth(s.newMux())}
 
 	errCh := make(chan error, 1)
 	go func() {

@@ -98,10 +98,31 @@ type WorkflowConfig struct {
 	OMX                  OMXConfig           `yaml:"omx"`
 	OMC                  OMCConfig           `yaml:"omc"`
 	Linear               LinearConfigSection `yaml:"linear"`
+	Jira                 JiraConfigSection   `yaml:"jira"`
 	OhMyOpenCode         OhMyOpenCodeConfig  `yaml:"oh_my_opencode"`
 	Team                 TeamSectionConfig   `yaml:"team"`
 	Timeline             TimelineConfig      `yaml:"timeline"`
+	Web                  WebConfig           `yaml:"web"`
+	Notifications        NotificationsConfig `yaml:"notifications"`
 	PromptTemplate       string              `yaml:"-"`
+}
+
+// NotificationsConfig wires lifecycle events to chat webhooks. URLs usually
+// come from SLACK_WEBHOOK_URL / CONTRABASS_WEBHOOK_URL instead of the
+// committed workflow file; Events filters which event types post ("*" for
+// all, empty for the completion/failure/retry default set).
+type NotificationsConfig struct {
+	SlackWebhookURL string   `yaml:"slack_webhook_url"`
+	WebhookURL      string   `yaml:"webhook_url"`
+	Events          []string `yaml:"events"`
+}
+
+// WebConfig controls the embedded dashboard server. Listen overrides the
+// localhost:<port> default derived from --port; AuthToken gates every route
+// and is mandatory for non-loopback listen addresses.
+type WebConfig struct {
+	Listen    string `yaml:"listen"`
+	AuthToken string `yaml:"auth_token"`
 }
 
 type TrackerConfig struct {
@@ -193,6 +214,24 @@ type LinearSyncCommentsConfig struct {
 	PollIntervalMs int    `yaml:"poll_interval_ms"`
 }
 
+// JiraConfigSection configures the Jira Cloud tracker adapter. Email and
+// APIToken usually come from JIRA_EMAIL / JIRA_API_TOKEN instead of the
+// workflow file; explicit transitions override the dynamic status-category
+// resolution.
+type JiraConfigSection struct {
+	BaseURL              string   `yaml:"base_url"`
+	Email                string   `yaml:"email"`
+	APIToken             string   `yaml:"api_token"`
+	Project              string   `yaml:"project"`
+	JQL                  string   `yaml:"jql"`
+	AccountID            string   `yaml:"account_id"`
+	Labels               []string `yaml:"labels"`
+	TransitionInProgress string   `yaml:"transition_in_progress"`
+	TransitionDone       string   `yaml:"transition_done"`
+	TransitionFailed     string   `yaml:"transition_failed"`
+	PageSize             int      `yaml:"page_size"`
+}
+
 // TeamSectionConfig holds settings for multi-agent team coordination.
 type TeamSectionConfig struct {
 	MaxWorkers        int    `yaml:"max_workers"`
@@ -239,6 +278,8 @@ func (c *WorkflowConfig) Clone() *WorkflowConfig {
 
 	cfg := *c
 	cfg.Tracker.Labels = slices.Clone(c.Tracker.Labels)
+	cfg.Jira.Labels = slices.Clone(c.Jira.Labels)
+	cfg.Notifications.Events = slices.Clone(c.Notifications.Events)
 	cfg.OhMyOpenCode.Plugins = slices.Clone(c.OhMyOpenCode.Plugins)
 	cfg.OhMyOpenCode.Agents = maps.Clone(c.OhMyOpenCode.Agents)
 	cfg.OhMyOpenCode.Categories = maps.Clone(c.OhMyOpenCode.Categories)
@@ -632,6 +673,20 @@ func (c *WorkflowConfig) TeamStateDir() string {
 		return defaultTeamStateDir
 	}
 	return c.Team.StateDir
+}
+
+func (c *WorkflowConfig) WebListen() string {
+	if c == nil {
+		return ""
+	}
+	return strings.TrimSpace(c.Web.Listen)
+}
+
+func (c *WorkflowConfig) WebAuthToken() string {
+	if c == nil {
+		return ""
+	}
+	return strings.TrimSpace(c.Web.AuthToken)
 }
 
 func (c *WorkflowConfig) WorkflowTimelineDir() string {

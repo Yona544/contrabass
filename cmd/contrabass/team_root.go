@@ -16,6 +16,7 @@ import (
 	contrabass "github.com/junhoyeo/contrabass"
 	"github.com/junhoyeo/contrabass/internal/config"
 	"github.com/junhoyeo/contrabass/internal/hub"
+	"github.com/junhoyeo/contrabass/internal/notify"
 	"github.com/junhoyeo/contrabass/internal/orchestrator"
 	"github.com/junhoyeo/contrabass/internal/tracker"
 	"github.com/junhoyeo/contrabass/internal/tui"
@@ -39,19 +40,24 @@ func runTeamExecutionApp(
 	logger *log.Logger,
 	noTUI bool,
 	dryRun bool,
-	port int,
+	webOpts webOptions,
 ) error {
 	if watcher == nil {
 		return errors.New("config watcher is required for team execution")
 	}
 
 	var webSink chan<- web.WebEvent
-	if port > 0 {
+	if webOpts.Enabled {
 		var err error
-		webSink, err = startTeamWebServer(ctx, logger, port)
+		webSink, err = startTeamWebServer(ctx, logger, webOpts)
 		if err != nil {
 			return err
 		}
+	}
+
+	notifier := newNotifier(watcher.GetConfig(), logger)
+	if notifier.Enabled() {
+		go notifier.Start(ctx)
 	}
 
 	forwardToWeb := func(teamEvents <-chan types.TeamEvent) <-chan types.TeamEvent {
@@ -70,22 +76,22 @@ func runTeamExecutionApp(
 	}
 
 	if dryRun {
-		return runTeamExecutionLoop(ctx, cfgPath, watcher, nil, true)
+		return runTeamExecutionLoop(ctx, cfgPath, watcher, nil, notifier, true)
 	}
 
 	if noTUI {
-		return runTeamExecutionLoop(ctx, cfgPath, watcher, nil, false)
+		return runTeamExecutionLoop(ctx, cfgPath, watcher, nil, notifier, false)
 	}
 
 	teamEvents := make(chan types.TeamEvent, teamEventBufferSize)
 	cfg := watcher.GetConfig()
 	return runTeamTUI(ctx, cfg, forwardToWeb(teamEvents), func(runCtx context.Context) error {
 		defer close(teamEvents)
-		return runTeamExecutionLoop(runCtx, cfgPath, watcher, teamEvents, false)
+		return runTeamExecutionLoop(runCtx, cfgPath, watcher, teamEvents, notifier, false)
 	})
 }
 
-func runTeamExecutionWebServer(ctx context.Context, logger *log.Logger, port int) (chan<- web.WebEvent, error) {
+func runTeamExecutionWebServer(ctx context.Context, logger *log.Logger, webOpts webOptions) (chan<- web.WebEvent, error) {
 	webEvents := make(chan web.WebEvent, 256)
 	h := hub.NewHub(webEvents)
 	go h.Run(ctx)
@@ -96,9 +102,10 @@ func runTeamExecutionWebServer(ctx context.Context, logger *log.Logger, port int
 	}
 
 	provider := web.NewTeamSnapshotProvider()
-	srv := web.NewServer(fmt.Sprintf("localhost:%d", port), provider, h, dashboardFS)
+	srv := web.NewServer(webOpts.ListenAddr, provider, h, dashboardFS)
+	srv.SetAuthToken(webOpts.AuthToken)
 
-	listener, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", port))
+	listener, err := net.Listen("tcp", srv.ListenAddr())
 	if err != nil {
 		return nil, fmt.Errorf("listen web dashboard: %w", err)
 	}
@@ -109,7 +116,7 @@ func runTeamExecutionWebServer(ctx context.Context, logger *log.Logger, port int
 		}
 	}()
 
-	fmt.Fprintf(os.Stderr, "Web dashboard available at http://localhost:%d\n", port)
+	fmt.Fprintf(os.Stderr, "Web dashboard available at %s\n", webOpts.dashboardURL())
 	return webEvents, nil
 }
 func runTeamExecutionLoop(
@@ -117,6 +124,7 @@ func runTeamExecutionLoop(
 	cfgPath string,
 	watcher *config.Watcher,
 	teamEvents chan<- types.TeamEvent,
+	notifier *notify.Notifier,
 	singlePoll bool,
 ) error {
 	for {
@@ -138,6 +146,11 @@ func runTeamExecutionLoop(
 				case <-ctx.Done():
 				case teamEvents <- event:
 				}
+			})
+		}
+		if notifier.Enabled() {
+			hooks.EventHandlers = append(hooks.EventHandlers, func(_ context.Context, event types.TeamEvent) {
+				notifier.Notify(web.NewTeamWebEvent(event))
 			})
 		}
 
