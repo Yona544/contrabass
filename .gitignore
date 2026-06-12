@@ -6,6 +6,7 @@ symphony-charm
 
 # - Runtime artifacts
 contrabass.log
+contrabass-*.log
 contrabass_test.log
 workspaces/
 
@@ -59,3 +60,6 @@ packages/dashboard/dist/
 .contrabass/board/comments/CB-3.jsonl
 .contrabass/board/comments/CB-4.jsonl
 .gitnexus
+
+# Agent skill caches (regenerated per machine)
+.agents/
