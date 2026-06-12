@@ -31,6 +31,7 @@ const (
 var defaultEvents = []string{
 	"AgentFinished",
 	"BackoffEnqueued",
+	"ScheduleWindowClosed",
 	"run_completed",
 	"run_error",
 }
@@ -228,6 +229,8 @@ func renderMessage(evt web.WebEvent) (string, string) {
 		return renderOrchestratorMessage(payload), payload.IssueID
 	case types.TeamEvent:
 		return renderTeamMessage(payload), ""
+	case web.ScheduleEvent:
+		return "🗓️ " + payload.Summary, ""
 	default:
 		return fmt.Sprintf("contrabass event %s", evt.Type), ""
 	}
@@ -248,6 +251,8 @@ func renderOrchestratorMessage(evt orchestrator.OrchestratorEvent) string {
 			evt.IssueID, data.Attempt, data.RetryAt.Format(time.RFC3339), data.Error)
 	case orchestrator.IssueReleased:
 		return fmt.Sprintf("🏁 %s released (attempt %d)", evt.IssueID, data.Attempt)
+	case orchestrator.ScheduleWindowClosed:
+		return "🗓️ " + data.Summary
 	default:
 		return fmt.Sprintf("contrabass %s for %s", evt.Type.String(), evt.IssueID)
 	}

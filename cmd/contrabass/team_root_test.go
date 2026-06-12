@@ -73,7 +73,7 @@ Prompt.
 	}
 
 	events := make(chan types.TeamEvent, 4)
-	require.NoError(t, runTeamExecutionLoop(ctx, cfgPath, watcher, events, notify.New(notify.Config{}), true))
+	require.NoError(t, runTeamExecutionLoop(ctx, cfgPath, watcher, events, notify.New(notify.Config{}), nil, true))
 
 	dispatchedIssue, err := localTracker.GetIssue(ctx, issue.ID)
 	require.NoError(t, err)

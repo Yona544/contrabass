@@ -294,6 +294,13 @@ func run(cfgPath string, noTUI bool, logFile, logLevel string, dryRun bool, port
 		Base:    cfg.PullRequest.Base,
 		Remote:  cfg.PullRequest.Remote,
 	})
+	gate, err := buildScheduleGate(cfg)
+	if err != nil {
+		return err
+	}
+	if gate != nil {
+		orch.SetDispatchGate(gate)
+	}
 	timelineStore := timeline.NewStore(cfg.WorkflowTimelineDir())
 	orch.SetWorkflowTimeline(timelineStore, cfg.LinearSyncCommentsEnabled())
 	var linearSyncer *timeline.LinearSyncer

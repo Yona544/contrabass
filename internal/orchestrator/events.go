@@ -14,6 +14,7 @@ const (
 	EventAgentFinished
 	EventBackoffEnqueued
 	EventIssueReleased
+	EventScheduleWindowClosed
 )
 
 func (t EventType) String() string {
@@ -28,6 +29,8 @@ func (t EventType) String() string {
 		return "BackoffEnqueued"
 	case EventIssueReleased:
 		return "IssueReleased"
+	case EventScheduleWindowClosed:
+		return "ScheduleWindowClosed"
 	default:
 		return "Unknown"
 	}
@@ -90,3 +93,11 @@ type IssueReleased struct {
 }
 
 func (IssueReleased) eventPayload() {}
+
+// ScheduleWindowClosed reports the end-of-window summary when a dispatch
+// schedule is configured.
+type ScheduleWindowClosed struct {
+	Summary string
+}
+
+func (ScheduleWindowClosed) eventPayload() {}

@@ -120,6 +120,10 @@ func (o *Orchestrator) completeRun(ctx context.Context, issueID string, doneErr 
 		},
 	})
 
+	if o.gate != nil {
+		o.gate.RecordCompletion(finalAttempt.Phase == types.Succeeded, finalAttempt.TokensIn+finalAttempt.TokensOut)
+	}
+
 	if finalAttempt.Phase == types.Succeeded {
 		advanced, reason, err := verifyBranchAdvanced(
 			ctx, finalAttempt.WorkspacePath, entry.issue.BranchName, finalAttempt.ClaimHeadSha)

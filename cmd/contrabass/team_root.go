@@ -18,6 +18,7 @@ import (
 	"github.com/junhoyeo/contrabass/internal/hub"
 	"github.com/junhoyeo/contrabass/internal/notify"
 	"github.com/junhoyeo/contrabass/internal/orchestrator"
+	"github.com/junhoyeo/contrabass/internal/schedule"
 	"github.com/junhoyeo/contrabass/internal/tracker"
 	"github.com/junhoyeo/contrabass/internal/tui"
 	"github.com/junhoyeo/contrabass/internal/types"
@@ -60,6 +61,11 @@ func runTeamExecutionApp(
 		go notifier.Start(ctx)
 	}
 
+	gate, err := buildScheduleGate(watcher.GetConfig())
+	if err != nil {
+		return err
+	}
+
 	forwardToWeb := func(teamEvents <-chan types.TeamEvent) <-chan types.TeamEvent {
 		if webSink == nil {
 			return teamEvents
@@ -76,18 +82,18 @@ func runTeamExecutionApp(
 	}
 
 	if dryRun {
-		return runTeamExecutionLoop(ctx, cfgPath, watcher, nil, notifier, true)
+		return runTeamExecutionLoop(ctx, cfgPath, watcher, nil, notifier, gate, true)
 	}
 
 	if noTUI {
-		return runTeamExecutionLoop(ctx, cfgPath, watcher, nil, notifier, false)
+		return runTeamExecutionLoop(ctx, cfgPath, watcher, nil, notifier, gate, false)
 	}
 
 	teamEvents := make(chan types.TeamEvent, teamEventBufferSize)
 	cfg := watcher.GetConfig()
 	return runTeamTUI(ctx, cfg, forwardToWeb(teamEvents), func(runCtx context.Context) error {
 		defer close(teamEvents)
-		return runTeamExecutionLoop(runCtx, cfgPath, watcher, teamEvents, notifier, false)
+		return runTeamExecutionLoop(runCtx, cfgPath, watcher, teamEvents, notifier, gate, false)
 	})
 }
 
@@ -125,6 +131,7 @@ func runTeamExecutionLoop(
 	watcher *config.Watcher,
 	teamEvents chan<- types.TeamEvent,
 	notifier *notify.Notifier,
+	gate *schedule.Schedule,
 	singlePoll bool,
 ) error {
 	for {
@@ -134,6 +141,12 @@ func runTeamExecutionLoop(
 		}
 		if err := validateTeamExecutionConfig(cfg); err != nil {
 			return err
+		}
+
+		if gate != nil {
+			if summary, closed := gate.Tick(time.Now()); closed {
+				notifier.Notify(web.NewScheduleWebEvent(summary))
+			}
 		}
 
 		hooks := teamRunHooks{
@@ -154,17 +167,34 @@ func runTeamExecutionLoop(
 			})
 		}
 
+		dispatchOpts := boardDispatchOptions{
+			ConfigPath: cfgPath,
+			UntilEmpty: true,
+		}
+		runIssue := func(opts teamRunOptions) error {
+			return runRootTeamIssue(opts, hooks)
+		}
+		if gate != nil {
+			dispatchOpts.ContinueDispatch = func() (bool, string) {
+				return gate.AllowDispatch(time.Now())
+			}
+			inner := runIssue
+			runIssue = func(opts teamRunOptions) error {
+				gate.RecordStart(time.Now())
+				runErr := inner(opts)
+				// Team runs do not surface token counts at this layer, so
+				// only the issue budget advances in team mode.
+				gate.RecordCompletion(runErr == nil, 0)
+				return runErr
+			}
+		}
+
 		if err := dispatchRootBoardIssues(
 			ctx,
 			io.Discard,
 			newLocalBoardTracker(cfg),
-			boardDispatchOptions{
-				ConfigPath: cfgPath,
-				UntilEmpty: true,
-			},
-			func(opts teamRunOptions) error {
-				return runRootTeamIssue(opts, hooks)
-			},
+			dispatchOpts,
+			runIssue,
 		); err != nil {
 			if ctx.Err() != nil {
 				return nil

@@ -15,6 +15,7 @@ const (
 	WebEventTeam         WebEventKind = "team"
 	WebEventBoard        WebEventKind = "board"
 	WebEventAgentLog     WebEventKind = "agent_log"
+	WebEventSchedule     WebEventKind = "schedule"
 )
 
 type WebEvent struct {
@@ -51,6 +52,20 @@ func NewTeamWebEvent(event types.TeamEvent) WebEvent {
 		Type:      event.Type,
 		Payload:   event,
 		Timestamp: event.Timestamp,
+	}
+}
+
+// ScheduleEvent carries an end-of-window dispatch summary.
+type ScheduleEvent struct {
+	Summary string `json:"summary"`
+}
+
+func NewScheduleWebEvent(summary string) WebEvent {
+	return WebEvent{
+		Kind:      WebEventSchedule,
+		Type:      "ScheduleWindowClosed",
+		Payload:   ScheduleEvent{Summary: summary},
+		Timestamp: time.Now().UTC(),
 	}
 }
 

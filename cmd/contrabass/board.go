@@ -20,6 +20,9 @@ type boardDispatchOptions struct {
 	TeamName   string
 	MaxWorkers int
 	UntilEmpty bool
+	// ContinueDispatch, when set, is consulted before each dispatch; a false
+	// result stops the pass cleanly (schedule windows / budget gates).
+	ContinueDispatch func() (bool, string)
 }
 
 var runBoardDispatchTeam = runTeamWithOptions
@@ -449,6 +452,13 @@ func dispatchBoardIssues(
 ) error {
 	dispatched := 0
 	for {
+		if opts.ContinueDispatch != nil {
+			if ok, reason := opts.ContinueDispatch(); !ok {
+				_, _ = fmt.Fprintf(out, "dispatch paused: %s\n", reason)
+				return nil
+			}
+		}
+
 		issueID, resolvedTeamName, found, err := dispatchNextBoardIssue(ctx, localTracker, opts, runTeam)
 		if err != nil {
 			return err

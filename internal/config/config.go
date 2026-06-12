@@ -106,7 +106,26 @@ type WorkflowConfig struct {
 	Web                  WebConfig           `yaml:"web"`
 	Notifications        NotificationsConfig `yaml:"notifications"`
 	PullRequest          PullRequestConfig   `yaml:"pull_request"`
+	Schedule             ScheduleConfig      `yaml:"schedule"`
 	PromptTemplate       string              `yaml:"-"`
+}
+
+// ScheduleConfig gates dispatch to time windows with per-window budgets,
+// e.g. windows: ["22:00-06:00"], days: [fri, sat], max_issues: 10.
+type ScheduleConfig struct {
+	Windows   []string `yaml:"windows"`
+	Days      []string `yaml:"days"`
+	MaxIssues int      `yaml:"max_issues"`
+	MaxTokens int64    `yaml:"max_tokens"`
+}
+
+// ScheduleEnabled reports whether any schedule constraint is configured.
+func (c *WorkflowConfig) ScheduleEnabled() bool {
+	if c == nil {
+		return false
+	}
+	return len(c.Schedule.Windows) > 0 || len(c.Schedule.Days) > 0 ||
+		c.Schedule.MaxIssues > 0 || c.Schedule.MaxTokens > 0
 }
 
 // PullRequestConfig turns verified successful runs into pull requests via
@@ -303,6 +322,8 @@ func (c *WorkflowConfig) Clone() *WorkflowConfig {
 	cfg.Tracker.Labels = slices.Clone(c.Tracker.Labels)
 	cfg.Jira.Labels = slices.Clone(c.Jira.Labels)
 	cfg.Notifications.Events = slices.Clone(c.Notifications.Events)
+	cfg.Schedule.Windows = slices.Clone(c.Schedule.Windows)
+	cfg.Schedule.Days = slices.Clone(c.Schedule.Days)
 	cfg.Claude.AllowedTools = slices.Clone(c.Claude.AllowedTools)
 	cfg.Claude.ExtraArgs = slices.Clone(c.Claude.ExtraArgs)
 	cfg.OhMyOpenCode.Plugins = slices.Clone(c.OhMyOpenCode.Plugins)

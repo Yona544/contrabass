@@ -73,6 +73,7 @@ type Orchestrator struct {
 
 	prConfig PullRequestConfig
 	prExec   prExecutor
+	gate     DispatchGate
 
 	mu           sync.Mutex
 	shutdownOnce sync.Once
@@ -98,6 +99,20 @@ type Orchestrator struct {
 func (o *Orchestrator) SetWorkflowTimeline(store *timeline.Store, suppressLinearLegacyComments bool) {
 	o.timeline = store
 	o.suppressLinearLegacyComments = suppressLinearLegacyComments
+}
+
+// DispatchGate lets a scheduler veto new agent dispatches and collect
+// per-window run statistics. Implemented by internal/schedule.
+type DispatchGate interface {
+	AllowDispatch(now time.Time) (ok bool, reason string)
+	RecordStart(now time.Time)
+	RecordCompletion(succeeded bool, tokens int64)
+	Tick(now time.Time) (summary string, closed bool)
+}
+
+// SetDispatchGate installs a schedule gate; nil disables gating.
+func (o *Orchestrator) SetDispatchGate(gate DispatchGate) {
+	o.gate = gate
 }
 
 type runSignal struct {
@@ -223,9 +238,28 @@ func (o *Orchestrator) runCycle(ctx context.Context, supervisor *errgroup.Group,
 
 	openIDs := buildOpenIDSet(issues)
 
-	o.dispatchReadyBackoff(ctx, supervisorCtxOr(ctx), cfg, issuesByID, supervisor, runSignals)
+	allowDispatch, gateReason := true, ""
+	if o.gate != nil {
+		if summary, closed := o.gate.Tick(time.Now()); closed {
+			logging.LogOrchestratorEvent(o.logger, "schedule_window_closed", "summary", summary)
+			o.emitEvent(OrchestratorEvent{
+				Type:      EventScheduleWindowClosed,
+				Timestamp: time.Now(),
+				Data:      ScheduleWindowClosed{Summary: summary},
+			})
+		}
+		allowDispatch, gateReason = o.gate.AllowDispatch(time.Now())
+	}
+
+	if allowDispatch {
+		o.dispatchReadyBackoff(ctx, supervisorCtxOr(ctx), cfg, issuesByID, supervisor, runSignals)
+	}
 	o.recoverOrphanedClaims(issues)
-	o.dispatchUnclaimedIssues(ctx, supervisorCtxOr(ctx), cfg, issues, openIDs, supervisor, runSignals)
+	if allowDispatch {
+		o.dispatchUnclaimedIssues(ctx, supervisorCtxOr(ctx), cfg, issues, openIDs, supervisor, runSignals)
+	} else {
+		o.logger.Debug("dispatch gated", "reason", gateReason)
+	}
 	o.releaseBlockedRunning(ctx, issuesByID, openIDs)
 	o.emitStatusUpdate()
 }
@@ -588,6 +622,10 @@ func (o *Orchestrator) dispatchIssue(
 	o.stats.Running = len(o.running)
 	eventTimestamp := time.Now()
 	o.mu.Unlock()
+
+	if o.gate != nil {
+		o.gate.RecordStart(time.Now())
+	}
 
 	logging.LogAgentEvent(
 		o.logger,
