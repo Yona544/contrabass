@@ -13,6 +13,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/junhoyeo/contrabass/internal/agent"
+	"github.com/junhoyeo/contrabass/internal/approval"
 	"github.com/junhoyeo/contrabass/internal/config"
 	"github.com/junhoyeo/contrabass/internal/history"
 	"github.com/junhoyeo/contrabass/internal/logging"
@@ -51,6 +52,7 @@ type runEntry struct {
 	lastHeartbeatAt  time.Time
 	stageState       agentStageState
 	stopRequested    bool
+	planOnly         bool
 }
 
 type Stats struct {
@@ -72,10 +74,11 @@ type Orchestrator struct {
 
 	suppressLinearLegacyComments bool
 
-	prConfig PullRequestConfig
-	prExec   prExecutor
-	gate     DispatchGate
-	history  *history.Store
+	prConfig  PullRequestConfig
+	prExec    prExecutor
+	gate      DispatchGate
+	history   *history.Store
+	approvals *approval.Store
 
 	dispatchPaused atomic.Bool
 
@@ -361,6 +364,10 @@ func (o *Orchestrator) dispatchUnclaimedIssues(
 				"blockers", strings.Join(unresolved, ","))
 			continue
 		}
+		if o.approvalParked(issue.ID) {
+			o.logger.Debug("dispatch parked awaiting plan approval", "issue_id", issue.ID)
+			continue
+		}
 		if !o.canDispatch(cfg.MaxConcurrency()) {
 			return
 		}
@@ -580,8 +587,9 @@ func (o *Orchestrator) dispatchIssue(
 		}
 	}
 
-	prompt, err := config.RenderPrompt(promptTemplate, issue)
-	if err != nil {
+	prompt, renderErr := config.RenderPrompt(promptTemplate, issue)
+	prompt, planOnly := o.applyApprovalPrompt(issue.ID, prompt)
+	if err := renderErr; err != nil {
 		if cleanupErr := o.workspace.Cleanup(ctx, issue.ID); cleanupErr != nil {
 			logging.LogIssueEvent(o.logger, issue.ID, "workspace_cleanup_failed", "stage", "prompt_render", "err", cleanupErr)
 		}
@@ -631,6 +639,7 @@ func (o *Orchestrator) dispatchIssue(
 		cancel:      cancel,
 		workspace:   workspacePath,
 		lastEventAt: time.Now(),
+		planOnly:    planOnly,
 	}
 
 	o.mu.Lock()

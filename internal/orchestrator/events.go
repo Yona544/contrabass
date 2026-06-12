@@ -15,6 +15,7 @@ const (
 	EventBackoffEnqueued
 	EventIssueReleased
 	EventScheduleWindowClosed
+	EventAgentTranscript
 )
 
 func (t EventType) String() string {
@@ -31,6 +32,8 @@ func (t EventType) String() string {
 		return "IssueReleased"
 	case EventScheduleWindowClosed:
 		return "ScheduleWindowClosed"
+	case EventAgentTranscript:
+		return "AgentTranscript"
 	default:
 		return "Unknown"
 	}
@@ -101,3 +104,11 @@ type ScheduleWindowClosed struct {
 }
 
 func (ScheduleWindowClosed) eventPayload() {}
+
+// AgentTranscript carries an assistant message fragment from a running agent
+// so UIs can show live transcripts.
+type AgentTranscript struct {
+	Text string
+}
+
+func (AgentTranscript) eventPayload() {}

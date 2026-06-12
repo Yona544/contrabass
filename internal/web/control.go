@@ -21,6 +21,33 @@ type HistoryProvider interface {
 	Analytics() (history.Analytics, error)
 }
 
+// ApprovalController is implemented by the orchestrator when the
+// plan-approval gate is enabled.
+type ApprovalController interface {
+	ApproveIssue(issueID string) error
+}
+
+func (s *Server) SetApprovalController(controller ApprovalController) {
+	s.approvalController = controller
+}
+
+func (s *Server) handleApproveIssue(w http.ResponseWriter, r *http.Request) {
+	if s.approvalController == nil {
+		writeJSONError(w, http.StatusServiceUnavailable, "plan approval not enabled")
+		return
+	}
+	issueID := strings.TrimSpace(r.PathValue("issue_id"))
+	if issueID == "" {
+		writeJSONError(w, http.StatusBadRequest, "issue_id is required")
+		return
+	}
+	if err := s.approvalController.ApproveIssue(issueID); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
 func (s *Server) SetDispatchController(controller DispatchController) {
 	s.dispatchController = controller
 }

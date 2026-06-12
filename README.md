@@ -24,8 +24,10 @@ Today Contrabass ships with:
 - **Auto-PR**: verified successful runs push their branch and open a draft pull request via the `gh` CLI (`pull_request.enabled`)
 - **Scheduled autonomy**: dispatch windows, weekday filters, and per-window issue/token budgets (`schedule:`), with end-of-window summaries
 - **Notifications**: Slack-compatible and generic JSON webhooks for finished/failed/retried runs (`notifications:`)
-- **Run history & analytics**: every run is logged to JSONL and aggregated per agent (success rate, tokens, duration) at `/api/v1/history` and `/api/v1/analytics`
+- **Run history & analytics**: every run is logged to JSONL and aggregated per agent (success rate, tokens, duration, estimated USD cost) at `/api/v1/history` and `/api/v1/analytics`
 - **Team-shared dashboard**: bind beyond localhost with `--listen` plus a mandatory token (`web.auth_token`), pause/resume dispatch and promote retries from the browser
+- **Solo workflow commands**: `run` (one-shot prompt → agent → branch), `resume` (continue a claude session with feedback), `review` (diff + merge/squash/discard/feedback), `plan` (decompose a task into a dependency-ordered backlog), `scan` (TODO/FIXME comments → board issues), `approve` (plan-approval gate)
+- **Cost awareness**: per-model price table (`pricing:`), cost in analytics, and `schedule.max_usd` budgets; desktop notifications via `notifications.desktop`
 - Git-worktree-based workspace provisioning under `workspaces/<issue-id>` with non-git fallback for repositories without git
 - Teams: multi-agent coordination with a local task board, phased pipeline (plan → exec → verify), live TUI team table, and dual worker modes (tmux-based multi-process or goroutine-based in-process)
 - An orchestrator with claim/release, BlockedBy gating, orphan claim recovery, branch advance verification, stall detection, deterministic retry backoff, liveness snapshots with agent stage classification and ETA estimation
@@ -110,6 +112,30 @@ go build -tags dashboard_dist -o contrabass.exe ./cmd/contrabass
 Team runs default to `goroutine` worker mode on Windows, so `tmux` is not required unless you explicitly set `team.worker_mode: tmux`.
 
 ## Quick start
+
+### Solo workflow: delegate from the shell
+
+```bash
+# One sentence in, one agent run out — no workflow file, no board ceremony:
+contrabass run "make the config watcher debounce test deterministic"
+
+# Review the result, then land it (merge/squash/discard/feedback):
+contrabass review RUN-1
+
+# Not quite right? Continue the same agent session with feedback:
+contrabass resume RUN-1 "also cover the rename race on Windows"
+
+# Turn a big task into a dependency-ordered backlog:
+contrabass plan "add CSV export to the reporting module" --apply
+
+# Turn your TODO/FIXME comments into board issues:
+contrabass scan --apply
+```
+
+With `approval.require_plan: true`, every issue first runs in planning mode
+and parks until `contrabass approve <id>` (or `contrabass approve --list` to
+see what's waiting). Add `notifications.desktop: true` for OS toasts when
+runs finish.
 
 ### Scaffold a workflow for your repo
 
@@ -347,6 +373,23 @@ web:
 history:
   enabled: true
   # dir: .contrabass/state/history
+
+# Per-model price table overlay (USD per million tokens). Claude families
+# are built in; unknown models report cost 0 and count as unpriced.
+pricing:
+  codex-mini:
+    input_per_mtok: 1.5
+    output_per_mtok: 6.0
+
+# Plan-approval gate: plan first, park, approve, then execute
+approval:
+  require_plan: true
+  # dir: .contrabass/state/approvals
+
+# Per-label prompt recipes: an issue labeled "bugfix" renders
+# <dir>/bugfix.md instead of the workflow body
+prompts:
+  dir: prompts
 ```
 
 ### Template bindings

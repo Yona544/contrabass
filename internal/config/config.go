@@ -110,7 +110,24 @@ type WorkflowConfig struct {
 	History              HistoryConfig               `yaml:"history"`
 	Pricing              map[string]ModelPriceConfig `yaml:"pricing"`
 	Prompts              PromptsConfig               `yaml:"prompts"`
+	Approval             ApprovalConfig              `yaml:"approval"`
 	PromptTemplate       string                      `yaml:"-"`
+}
+
+// ApprovalConfig enables the plan-approval gate: the first run for an issue
+// is plan-only; the issue parks until `contrabass approve` (or the dashboard)
+// clears it for execution.
+type ApprovalConfig struct {
+	RequirePlan bool   `yaml:"require_plan"`
+	Dir         string `yaml:"dir"`
+}
+
+// ApprovalDir returns where approval state lives.
+func (c *WorkflowConfig) ApprovalDir() string {
+	if c == nil || strings.TrimSpace(c.Approval.Dir) == "" {
+		return ".contrabass/state/approvals"
+	}
+	return c.Approval.Dir
 }
 
 // PromptsConfig points at a directory of per-label prompt recipes: an issue

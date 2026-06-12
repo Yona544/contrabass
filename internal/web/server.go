@@ -56,6 +56,7 @@ type Server struct {
 	timelineProvider   TimelineProvider
 	dispatchController DispatchController
 	historyProvider    HistoryProvider
+	approvalController ApprovalController
 }
 
 func NewServer(
@@ -181,6 +182,7 @@ func (s *Server) newMux() *http.ServeMux {
 	mux.HandleFunc("POST /api/v1/control/pause", s.withCORS(s.handlePauseDispatch))
 	mux.HandleFunc("POST /api/v1/control/resume", s.withCORS(s.handleResumeDispatch))
 	mux.HandleFunc("POST /api/v1/backoff/{issue_id}/retry", s.withCORS(s.handleRetryNow))
+	mux.HandleFunc("POST /api/v1/issues/{issue_id}/approve", s.withCORS(s.handleApproveIssue))
 	mux.HandleFunc("GET /api/v1/history", s.withCORS(s.handleHistory))
 	mux.HandleFunc("GET /api/v1/analytics", s.withCORS(s.handleAnalytics))
 	mux.HandleFunc("GET /api/v1/events", s.withCORS(s.handleSSE))

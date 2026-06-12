@@ -72,7 +72,32 @@ func (o *Orchestrator) handleAgentEvent(issueID string, event types.AgentEvent) 
 
 	o.mu.Unlock()
 
+	if text := extractTranscriptText(event); text != "" {
+		o.emitEvent(OrchestratorEvent{
+			Type:      EventAgentTranscript,
+			IssueID:   issueID,
+			Timestamp: event.Timestamp,
+			Data:      AgentTranscript{Text: text},
+		})
+	}
+
 	logging.LogAgentEvent(o.logger, issueID, event.Type)
+}
+
+const maxTranscriptFragment = 4096
+
+// extractTranscriptText pulls assistant message text from runner events
+// (the codex/claude "item/agentMessage" taxonomy), bounded so a huge block
+// cannot bloat the event stream.
+func extractTranscriptText(event types.AgentEvent) string {
+	if event.Type != "item/agentMessage" || event.Data == nil {
+		return ""
+	}
+	text, _ := event.Data["text"].(string)
+	if len(text) > maxTranscriptFragment {
+		text = text[:maxTranscriptFragment] + "…"
+	}
+	return text
 }
 
 func (o *Orchestrator) completeRun(ctx context.Context, issueID string, doneErr error) {
@@ -126,6 +151,14 @@ func (o *Orchestrator) completeRun(ctx context.Context, issueID string, doneErr 
 			o.runCostUSD(finalAttempt))
 	}
 	o.recordRunHistory(entry.issue, finalAttempt)
+
+	if entry.planOnly && finalAttempt.Phase == types.Succeeded {
+		// A successful planning run parks the issue for approval; plans are
+		// not code changes, so verification, PR, and release do not apply.
+		// Gate and history accounting already happened above.
+		o.finishPlanRun(ctx, entry, finalAttempt)
+		return
+	}
 
 	if finalAttempt.Phase == types.Succeeded {
 		advanced, reason, err := verifyBranchAdvanced(

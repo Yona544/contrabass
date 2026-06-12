@@ -119,7 +119,8 @@ progress in a terminal UI built with the Charm stack.`,
 
 	cmd.AddCommand(
 		newTeamCmd(), newBoardCmd(), newDoctorCmd(), newInitCmd(), newValidateCmd(),
-		newRunCmd(), newResumeCmd(), newReviewCmd(), newScanCmd(),
+		newRunCmd(), newResumeCmd(), newReviewCmd(), newScanCmd(), newPlanCmd(),
+		newApproveCmd(),
 	)
 
 	return cmd
@@ -311,6 +312,10 @@ func run(cfgPath string, noTUI bool, logFile, logLevel string, dryRun bool, port
 		historyStore.SetPricing(modelPricing(cfg))
 		orch.SetRunHistory(historyStore)
 	}
+	approvalStore := approvalStoreFor(cfg)
+	if approvalStore != nil {
+		orch.SetApprovalStore(approvalStore)
+	}
 	timelineStore := timeline.NewStore(cfg.WorkflowTimelineDir())
 	orch.SetWorkflowTimeline(timelineStore, cfg.LinearSyncCommentsEnabled())
 	var linearSyncer *timeline.LinearSyncer
@@ -382,6 +387,9 @@ func run(cfgPath string, noTUI bool, logFile, logLevel string, dryRun bool, port
 		srv.SetDispatchController(orch)
 		if historyStore != nil {
 			srv.SetHistoryProvider(historyStore)
+		}
+		if approvalStore != nil {
+			srv.SetApprovalController(orch)
 		}
 		if detailProvider, ok := trackerClient.(tracker.IssueDetailProvider); ok {
 			srv.SetIssueDetailProvider(detailProvider)
