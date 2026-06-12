@@ -9,6 +9,8 @@ builds:
     binary: contrabass
     env:
       - CGO_ENABLED=0
+    tags:
+      - dashboard_dist
     goos:
       - linux
       - darwin

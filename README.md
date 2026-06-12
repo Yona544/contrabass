@@ -83,6 +83,15 @@ On Windows, build the CLI/TUI without the embedded dashboard:
 go build -o contrabass.exe ./cmd/contrabass
 ```
 
+To include the embedded web dashboard, build the SPA first and pass the
+`dashboard_dist` build tag:
+
+```powershell
+bun install
+cd packages/dashboard; bun run build; cd ../..
+go build -tags dashboard_dist -o contrabass.exe ./cmd/contrabass
+```
+
 Team runs default to `goroutine` worker mode on Windows, so `tmux` is not required unless you explicitly set `team.worker_mode: tmux`.
 
 ## Quick start
