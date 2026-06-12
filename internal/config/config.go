@@ -93,6 +93,7 @@ type WorkflowConfig struct {
 	Workspace            WorkspaceConfig     `yaml:"workspace"`
 	Hooks                HooksConfig         `yaml:"hooks"`
 	Codex                CodexConfig         `yaml:"codex"`
+	Claude               ClaudeConfig        `yaml:"claude"`
 	Agent                AgentConfig         `yaml:"agent"`
 	OpenCode             OpenCodeConfig      `yaml:"opencode"`
 	OMX                  OMXConfig           `yaml:"omx"`
@@ -104,7 +105,17 @@ type WorkflowConfig struct {
 	Timeline             TimelineConfig      `yaml:"timeline"`
 	Web                  WebConfig           `yaml:"web"`
 	Notifications        NotificationsConfig `yaml:"notifications"`
+	PullRequest          PullRequestConfig   `yaml:"pull_request"`
 	PromptTemplate       string              `yaml:"-"`
+}
+
+// PullRequestConfig turns verified successful runs into pull requests via
+// git push + the gh CLI. Draft defaults to true so a human stays in the loop.
+type PullRequestConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Draft   *bool  `yaml:"draft"`
+	Base    string `yaml:"base"`
+	Remote  string `yaml:"remote"`
 }
 
 // NotificationsConfig wires lifecycle events to chat webhooks. URLs usually
@@ -169,6 +180,18 @@ type CodexConfig struct {
 
 type AgentConfig struct {
 	Type string `yaml:"type"`
+}
+
+// ClaudeConfig drives the native Claude Code runner (`claude -p` headless
+// mode with stream-json output). PermissionMode is only injected when set so
+// claude falls back to its own settings otherwise.
+type ClaudeConfig struct {
+	BinaryPath     string   `yaml:"binary_path"`
+	Model          string   `yaml:"model"`
+	PermissionMode string   `yaml:"permission_mode"`
+	MaxTurns       int      `yaml:"max_turns"`
+	AllowedTools   []string `yaml:"allowed_tools"`
+	ExtraArgs      []string `yaml:"extra_args"`
 }
 
 type OpenCodeConfig struct {
@@ -280,6 +303,8 @@ func (c *WorkflowConfig) Clone() *WorkflowConfig {
 	cfg.Tracker.Labels = slices.Clone(c.Tracker.Labels)
 	cfg.Jira.Labels = slices.Clone(c.Jira.Labels)
 	cfg.Notifications.Events = slices.Clone(c.Notifications.Events)
+	cfg.Claude.AllowedTools = slices.Clone(c.Claude.AllowedTools)
+	cfg.Claude.ExtraArgs = slices.Clone(c.Claude.ExtraArgs)
 	cfg.OhMyOpenCode.Plugins = slices.Clone(c.OhMyOpenCode.Plugins)
 	cfg.OhMyOpenCode.Agents = maps.Clone(c.OhMyOpenCode.Agents)
 	cfg.OhMyOpenCode.Categories = maps.Clone(c.OhMyOpenCode.Categories)
@@ -287,7 +312,20 @@ func (c *WorkflowConfig) Clone() *WorkflowConfig {
 		enabled := *c.Linear.IssueDetails.Enabled
 		cfg.Linear.IssueDetails.Enabled = &enabled
 	}
+	if c.PullRequest.Draft != nil {
+		draft := *c.PullRequest.Draft
+		cfg.PullRequest.Draft = &draft
+	}
 	return &cfg
+}
+
+// PullRequestDraft defaults to true: auto-opened PRs should arrive as drafts
+// unless the workflow explicitly opts into ready-for-review.
+func (c *WorkflowConfig) PullRequestDraft() bool {
+	if c == nil || c.PullRequest.Draft == nil {
+		return true
+	}
+	return *c.PullRequest.Draft
 }
 
 func (c *WorkflowConfig) MaxConcurrency() int {
@@ -419,6 +457,23 @@ func (c *WorkflowConfig) CodexSandbox() string {
 		return defaultSandbox
 	}
 	return c.Codex.Sandbox
+}
+
+func (c *WorkflowConfig) ClaudeBinaryPath() string {
+	if c == nil || strings.TrimSpace(c.Claude.BinaryPath) == "" {
+		return "claude"
+	}
+	return c.Claude.BinaryPath
+}
+
+func (c *WorkflowConfig) ClaudeModel() string {
+	if c == nil {
+		return ""
+	}
+	if c.Claude.Model != "" {
+		return c.Claude.Model
+	}
+	return c.ModelRaw
 }
 
 func (c *WorkflowConfig) AgentType() string {

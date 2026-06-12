@@ -172,6 +172,11 @@ func (o *Orchestrator) completeRun(ctx context.Context, issueID string, doneErr 
 		}
 	}
 
+	if finalAttempt.Phase == types.Succeeded {
+		// Push + PR must run before workspace cleanup removes the worktree.
+		o.maybeOpenPullRequest(ctx, entry, finalAttempt)
+	}
+
 	nodeSuffix, nodeStatus, nodeTitle := timelineStatusForPhase(finalAttempt.Phase)
 	o.recordTimelineNode(ctx, entry.issue, finalAttempt,
 		nodeSuffix, nodeStatus, nodeTitle, "Agent process reached a durable terminal state.", finalAttempt.Error, true)

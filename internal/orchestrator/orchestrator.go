@@ -71,6 +71,9 @@ type Orchestrator struct {
 
 	suppressLinearLegacyComments bool
 
+	prConfig PullRequestConfig
+	prExec   prExecutor
+
 	mu           sync.Mutex
 	shutdownOnce sync.Once
 	running      map[string]*runEntry

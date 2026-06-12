@@ -288,6 +288,12 @@ func run(cfgPath string, noTUI bool, logFile, logLevel string, dryRun bool, port
 	// 9. Create orchestrator
 	orch := orchestrator.NewOrchestrator(trackerClient, workspaceMgr, agentRunner, watcher, logger)
 	orch.SetBuildInfo(orchestrator.BuildInfo{Version: version, Commit: commit, Date: date})
+	orch.SetPullRequestConfig(orchestrator.PullRequestConfig{
+		Enabled: cfg.PullRequest.Enabled,
+		Draft:   cfg.PullRequestDraft(),
+		Base:    cfg.PullRequest.Base,
+		Remote:  cfg.PullRequest.Remote,
+	})
 	timelineStore := timeline.NewStore(cfg.WorkflowTimelineDir())
 	orch.SetWorkflowTimeline(timelineStore, cfg.LinearSyncCommentsEnabled())
 	var linearSyncer *timeline.LinearSyncer

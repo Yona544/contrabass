@@ -118,12 +118,13 @@ func createRunner(cfg *config.WorkflowConfig, teamName string, logger *slog.Logg
 	}
 
 	// Codex speaks JSONL over stdin/stdout and needs its own runner for the
-	// initialize → thread/start → turn/start protocol. TmuxRunner cannot
-	// drive this interaction, so codex always uses CodexRunner regardless of
-	// worker_mode. Other agents (opencode, omx, omc, oh-my-opencode) can run
-	// inside tmux panes because they are long-running servers or CLI tools
-	// that accept a file/arg prompt.
-	if cfg.AgentType() == "codex" || cfg.WorkerMode() != "tmux" {
+	// initialize → thread/start → turn/start protocol, and the claude runner
+	// likewise drives stream-json over pipes. TmuxRunner cannot drive these
+	// interactions, so codex and claude always use their dedicated runners
+	// regardless of worker_mode. Other agents (opencode, omx, omc,
+	// oh-my-opencode) can run inside tmux panes because they are long-running
+	// servers or CLI tools that accept a file/arg prompt.
+	if cfg.AgentType() == "codex" || cfg.AgentType() == "claude" || cfg.WorkerMode() != "tmux" {
 		// Fall through to the per-agent-type switch below.
 	} else if cfg.WorkerMode() == "tmux" {
 		if !tmux.IsTmuxAvailable(context.Background(), nil) {
@@ -182,6 +183,24 @@ func createRunner(cfg *config.WorkflowConfig, teamName string, logger *slog.Logg
 			Sandbox:        cfg.Codex.Sandbox,
 		})
 		return runner, nil
+	case "claude":
+		claudeBin := os.Getenv("CLAUDE_BINARY")
+		if claudeBin == "" {
+			claudeBin = cfg.ClaudeBinaryPath()
+		}
+		var stallTimeout time.Duration
+		if stallTimeoutMs := cfg.StallTimeoutMs(); stallTimeoutMs > 0 {
+			stallTimeout = time.Duration(stallTimeoutMs) * time.Millisecond
+		}
+		return agent.NewClaudeCodeRunner(agent.ClaudeCodeConfig{
+			BinaryPath:        claudeBin,
+			Model:             cfg.ClaudeModel(),
+			PermissionMode:    cfg.Claude.PermissionMode,
+			MaxTurns:          cfg.Claude.MaxTurns,
+			AllowedTools:      cfg.Claude.AllowedTools,
+			ExtraArgs:         cfg.Claude.ExtraArgs,
+			StreamReadTimeout: stallTimeout,
+		}), nil
 	case "opencode":
 		opencodeBin := os.Getenv("OPENCODE_BINARY")
 		if opencodeBin == "" {
@@ -227,6 +246,11 @@ func binaryPathForAgent(cfg *config.WorkflowConfig) string {
 			return codexBin
 		}
 		return cfg.CodexBinaryPath()
+	case "claude":
+		if claudeBin := os.Getenv("CLAUDE_BINARY"); claudeBin != "" {
+			return claudeBin
+		}
+		return cfg.ClaudeBinaryPath()
 	case "opencode":
 		if opencodeBin := os.Getenv("OPENCODE_BINARY"); opencodeBin != "" {
 			return opencodeBin
