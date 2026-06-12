@@ -37,4 +37,4 @@
                                                                                                     
                                                                                                     
                                                                                                     
-↑/k up • ↓/j down • ⏎ view detail • ⇥ next panel • ? toggle help • q quit                           
+↑/k up • ↓/j down • ⏎ view detail • t transcript • o editor • ⇥ next panel • ? toggle help • q quit 
