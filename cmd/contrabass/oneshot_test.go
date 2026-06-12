@@ -55,10 +55,16 @@ func TestRunSingleIssueSucceedsWithMockRunner(t *testing.T) {
 	cfg := oneShotTestConfig(t, boardDir)
 	issue := createOneShotIssue(t, ctx, boardDir, "mock success")
 
-	runner := &agent.MockRunner{Events: []types.AgentEvent{
-		{Type: "session/started"},
-		{Type: "turn/completed"},
-	}}
+	// Delay spaces the final event from the done signal so watchProcess
+	// records turn/completed before completion — the established MockRunner
+	// pattern in the orchestrator tests.
+	runner := &agent.MockRunner{
+		Events: []types.AgentEvent{
+			{Type: "session/started"},
+			{Type: "turn/completed"},
+		},
+		Delay: 10 * time.Millisecond,
+	}
 
 	out := &bytes.Buffer{}
 	lt := tracker.NewLocalTracker(tracker.LocalConfig{BoardDir: boardDir, IssuePrefix: oneShotIssuePrefix})
@@ -88,6 +94,7 @@ func TestRunSingleIssueFailureSetsError(t *testing.T) {
 	runner := &agent.MockRunner{
 		Events:  []types.AgentEvent{{Type: "session/started"}},
 		DoneErr: assert.AnError,
+		Delay:   10 * time.Millisecond,
 	}
 
 	out := &bytes.Buffer{}
