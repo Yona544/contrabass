@@ -73,7 +73,7 @@ Prompt.
 	}
 
 	events := make(chan types.TeamEvent, 4)
-	require.NoError(t, runTeamExecutionLoop(ctx, cfgPath, watcher, events, notify.New(notify.Config{}), nil, true))
+	require.NoError(t, runTeamExecutionLoop(ctx, cfgPath, watcher, events, notify.New(notify.Config{}), nil, nil, true))
 
 	dispatchedIssue, err := localTracker.GetIssue(ctx, issue.ID)
 	require.NoError(t, err)
@@ -120,7 +120,7 @@ Prompt.
 	})
 
 	called := false
-	startTeamWebServer = func(_ context.Context, _ *log.Logger, webOpts webOptions) (chan<- web.WebEvent, error) {
+	startTeamWebServer = func(_ context.Context, _ *log.Logger, webOpts webOptions, _ *teamDispatchController, _ *config.WorkflowConfig) (chan<- web.WebEvent, error) {
 		called = true
 		assert.Equal(t, "localhost:43111", webOpts.ListenAddr)
 		return make(chan<- web.WebEvent, 1), nil

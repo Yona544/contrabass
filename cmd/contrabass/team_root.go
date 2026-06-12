@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"net"
 	"os"
+	"sync/atomic"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -15,6 +16,7 @@ import (
 
 	contrabass "github.com/junhoyeo/contrabass"
 	"github.com/junhoyeo/contrabass/internal/config"
+	"github.com/junhoyeo/contrabass/internal/history"
 	"github.com/junhoyeo/contrabass/internal/hub"
 	"github.com/junhoyeo/contrabass/internal/notify"
 	"github.com/junhoyeo/contrabass/internal/orchestrator"
@@ -34,6 +36,31 @@ var (
 	startTeamWebServer      = runTeamExecutionWebServer
 )
 
+// teamDispatchController implements web.DispatchController for team mode,
+// where there is no orchestrator: pausing simply stops the board dispatch
+// loop from picking up new issues. Team mode has no backoff queue, so
+// RetryNow always reports not-found.
+type teamDispatchController struct {
+	paused atomic.Bool
+}
+
+func (c *teamDispatchController) SetDispatchPaused(paused bool) { c.paused.Store(paused) }
+func (c *teamDispatchController) DispatchPaused() bool          { return c.paused.Load() }
+func (c *teamDispatchController) RetryNow(string) bool          { return false }
+
+// pausableSnapshotProvider surfaces the team controller's paused state in
+// dashboard snapshots.
+type pausableSnapshotProvider struct {
+	inner      web.SnapshotProvider
+	controller *teamDispatchController
+}
+
+func (p pausableSnapshotProvider) Snapshot() orchestrator.StateSnapshot {
+	snapshot := p.inner.Snapshot()
+	snapshot.DispatchPaused = p.controller.DispatchPaused()
+	return snapshot
+}
+
 func runTeamExecutionApp(
 	ctx context.Context,
 	cfgPath string,
@@ -47,10 +74,12 @@ func runTeamExecutionApp(
 		return errors.New("config watcher is required for team execution")
 	}
 
+	controller := &teamDispatchController{}
+
 	var webSink chan<- web.WebEvent
 	if webOpts.Enabled {
 		var err error
-		webSink, err = startTeamWebServer(ctx, logger, webOpts)
+		webSink, err = startTeamWebServer(ctx, logger, webOpts, controller, watcher.GetConfig())
 		if err != nil {
 			return err
 		}
@@ -82,22 +111,28 @@ func runTeamExecutionApp(
 	}
 
 	if dryRun {
-		return runTeamExecutionLoop(ctx, cfgPath, watcher, nil, notifier, gate, true)
+		return runTeamExecutionLoop(ctx, cfgPath, watcher, nil, notifier, gate, controller, true)
 	}
 
 	if noTUI {
-		return runTeamExecutionLoop(ctx, cfgPath, watcher, nil, notifier, gate, false)
+		return runTeamExecutionLoop(ctx, cfgPath, watcher, nil, notifier, gate, controller, false)
 	}
 
 	teamEvents := make(chan types.TeamEvent, teamEventBufferSize)
 	cfg := watcher.GetConfig()
 	return runTeamTUI(ctx, cfg, forwardToWeb(teamEvents), func(runCtx context.Context) error {
 		defer close(teamEvents)
-		return runTeamExecutionLoop(runCtx, cfgPath, watcher, teamEvents, notifier, gate, false)
+		return runTeamExecutionLoop(runCtx, cfgPath, watcher, teamEvents, notifier, gate, controller, false)
 	})
 }
 
-func runTeamExecutionWebServer(ctx context.Context, logger *log.Logger, webOpts webOptions) (chan<- web.WebEvent, error) {
+func runTeamExecutionWebServer(
+	ctx context.Context,
+	logger *log.Logger,
+	webOpts webOptions,
+	controller *teamDispatchController,
+	cfg *config.WorkflowConfig,
+) (chan<- web.WebEvent, error) {
 	webEvents := make(chan web.WebEvent, 256)
 	h := hub.NewHub(webEvents)
 	go h.Run(ctx)
@@ -107,9 +142,20 @@ func runTeamExecutionWebServer(ctx context.Context, logger *log.Logger, webOpts 
 		return nil, fmt.Errorf("sub dashboard dist fs: %w", err)
 	}
 
-	provider := web.NewTeamSnapshotProvider()
+	var provider web.SnapshotProvider = web.NewTeamSnapshotProvider()
+	if controller != nil {
+		provider = pausableSnapshotProvider{inner: provider, controller: controller}
+	}
 	srv := web.NewServer(webOpts.ListenAddr, provider, h, dashboardFS)
 	srv.SetAuthToken(webOpts.AuthToken)
+	if controller != nil {
+		srv.SetDispatchController(controller)
+	}
+	if cfg.HistoryEnabled() {
+		// Read-only: team runs do not record history, but past
+		// orchestrator-mode runs in the same repo stay visible.
+		srv.SetHistoryProvider(history.NewStore(cfg.HistoryDir()))
+	}
 
 	listener, err := net.Listen("tcp", srv.ListenAddr())
 	if err != nil {
@@ -132,6 +178,7 @@ func runTeamExecutionLoop(
 	teamEvents chan<- types.TeamEvent,
 	notifier *notify.Notifier,
 	gate *schedule.Schedule,
+	controller *teamDispatchController,
 	singlePoll bool,
 ) error {
 	for {
@@ -171,13 +218,19 @@ func runTeamExecutionLoop(
 			ConfigPath: cfgPath,
 			UntilEmpty: true,
 		}
+		dispatchOpts.ContinueDispatch = func() (bool, string) {
+			if controller != nil && controller.DispatchPaused() {
+				return false, "dispatch paused via control plane"
+			}
+			if gate != nil {
+				return gate.AllowDispatch(time.Now())
+			}
+			return true, ""
+		}
 		runIssue := func(opts teamRunOptions) error {
 			return runRootTeamIssue(opts, hooks)
 		}
 		if gate != nil {
-			dispatchOpts.ContinueDispatch = func() (bool, string) {
-				return gate.AllowDispatch(time.Now())
-			}
 			inner := runIssue
 			runIssue = func(opts teamRunOptions) error {
 				gate.RecordStart(time.Now())

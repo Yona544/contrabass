@@ -30,8 +30,14 @@ function truncateError(error: string, limit = 60): string {
   return `${error.slice(0, limit - 3)}...`
 }
 
+interface RetryActionState {
+  status?: 'pending' | 'done'
+  error?: string
+}
+
 export function RetryQueue({ entries }: RetryQueueProps) {
   const [nowMs, setNowMs] = useState(() => Date.now())
+  const [retryState, setRetryState] = useState<Record<string, RetryActionState>>({})
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -40,6 +46,33 @@ export function RetryQueue({ entries }: RetryQueueProps) {
 
     return () => window.clearInterval(timer)
   }, [])
+
+  async function handleRetryNow(issueID: string) {
+    setRetryState((current) => ({ ...current, [issueID]: { status: 'pending' } }))
+    try {
+      const response = await fetch(`/api/v1/backoff/${encodeURIComponent(issueID)}/retry`, {
+        method: 'POST',
+      })
+      if (response.status === 404) {
+        setRetryState((current) => ({
+          ...current,
+          [issueID]: { error: zhCN.retryQueue.retryNotFound },
+        }))
+        return
+      }
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as { error?: string }
+        throw new Error(body.error || response.statusText)
+      }
+      setRetryState((current) => ({ ...current, [issueID]: { status: 'done' } }))
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setRetryState((current) => ({
+        ...current,
+        [issueID]: { error: zhCN.retryQueue.retryFailed(message) },
+      }))
+    }
+  }
 
   if (entries.length === 0) {
     return (
@@ -63,11 +96,14 @@ export function RetryQueue({ entries }: RetryQueueProps) {
             <th>{zhCN.retryQueue.headers.attempt}</th>
             <th>{zhCN.retryQueue.headers.retryIn}</th>
             <th>{zhCN.retryQueue.headers.error}</th>
+            <th>{zhCN.retryQueue.headers.actions}</th>
           </tr>
         </thead>
         <tbody>
           {entries.map((entry) => {
             const retryIn = formatRetryIn(entry.retry_at, nowMs)
+            const action = retryState[entry.issue_id] ?? {}
+            const actionLocked = action.status === 'pending' || action.status === 'done'
 
             return (
               <tr key={`${entry.issue_id}-${entry.attempt}-${entry.retry_at}`}>
@@ -78,6 +114,26 @@ export function RetryQueue({ entries }: RetryQueueProps) {
                 </td>
                 <td className="retry-queue__error" title={entry.error}>
                   {truncateError(entry.error)}
+                </td>
+                <td className="retry-queue__actions">
+                  <button
+                    type="button"
+                    className="retry-queue__retry-button"
+                    disabled={actionLocked}
+                    onClick={() => void handleRetryNow(entry.issue_id)}
+                    aria-label={zhCN.retryQueue.retryAria(entry.issue_id)}
+                  >
+                    {action.status === 'pending'
+                      ? zhCN.retryQueue.retrying
+                      : action.status === 'done'
+                        ? zhCN.retryQueue.retryTriggered
+                        : zhCN.retryQueue.retryNow}
+                  </button>
+                  {action.error ? (
+                    <p className="retry-queue__retry-error" role="alert">
+                      {action.error}
+                    </p>
+                  ) : null}
                 </td>
               </tr>
             )

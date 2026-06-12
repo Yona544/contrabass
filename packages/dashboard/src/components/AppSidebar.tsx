@@ -1,4 +1,4 @@
-import { Clock, Inbox, ListChecks, ListTree, Pause, Play, Settings } from 'lucide-react'
+import { ChartColumn, Clock, Inbox, ListChecks, ListTree, Pause, Play, Settings } from 'lucide-react'
 import {
   Sidebar,
   SidebarContent,
@@ -22,7 +22,7 @@ export type QueueId =
   | 'recent_done'
   | 'canceled'
 
-export type ViewId = QueueId | 'settings'
+export type ViewId = QueueId | 'analytics' | 'settings'
 
 interface AppSidebarProps {
   active: ViewId
@@ -129,6 +129,17 @@ export function AppSidebar({ active, onSelect, counts, connected, runtimeLabel }
       </SidebarContent>
       <SidebarFooter className="p-3">
         <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              isActive={active === 'analytics'}
+              onClick={() => onSelect('analytics')}
+              tooltip="分析"
+              className="h-9 rounded-xl text-muted-foreground hover:text-foreground data-active:text-foreground"
+            >
+              <ChartColumn className="h-4 w-4" />
+              <span>分析</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton
               isActive={active === 'settings'}

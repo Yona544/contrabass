@@ -53,6 +53,39 @@
   color: var(--accent-green);
 }
 
+.retry-queue__actions {
+  white-space: nowrap;
+}
+
+.retry-queue__retry-button {
+  font: inherit;
+  font-size: 0.8125rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-out-quart),
+    border-color var(--duration-fast) var(--ease-out-quart);
+}
+
+.retry-queue__retry-button:hover:not(:disabled) {
+  background: var(--accent-green-tint);
+  border-color: var(--accent-green);
+}
+
+.retry-queue__retry-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.retry-queue__retry-error {
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
+  color: var(--accent-red);
+}
+
 .retry-queue--empty {
   display: flex;
   align-items: center;

@@ -1,9 +1,16 @@
-import { afterEach, describe, expect, it } from "bun:test";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, mock } from "bun:test";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { StateSnapshot } from "../types";
 import { AppLayout } from "./AppLayout";
+import { zhCN } from "../i18n/messages";
 
 function expectInDocument(value: unknown) {
   (expect(value) as any).toBeInTheDocument();
@@ -11,7 +18,22 @@ function expectInDocument(value: unknown) {
 
 afterEach(() => {
   cleanup();
+  mock.restore();
 });
+
+function installFetchMock(
+  handler: (url: string) => Response | Promise<Response>,
+) {
+  const original = globalThis.fetch;
+  const fetchMock = mock((input: RequestInfo | URL) => handler(String(input)));
+  globalThis.fetch = fetchMock as unknown as typeof fetch;
+  return {
+    fetchMock,
+    restore: () => {
+      globalThis.fetch = original;
+    },
+  };
+}
 
 function makeState(): StateSnapshot {
   return {
@@ -80,5 +102,99 @@ describe("AppLayout", () => {
     expectInDocument(screen.getByRole("heading", { name: "运行设置" }));
     expectInDocument(screen.getByText("gpt-5-codex"));
     expect(screen.queryByText("暂无运行中任务")).toBeNull();
+  });
+
+  it("mounts the retry actions panel on the backoff queue view", () => {
+    const state = {
+      ...makeState(),
+      backoff: [
+        {
+          issue_id: "CB-9",
+          attempt: 2,
+          retry_at: "2026-05-14T12:30:00Z",
+          error: "exit status 1",
+        },
+      ],
+    };
+
+    render(
+      <TooltipProvider>
+        <AppLayout state={state} connected={true} runtimeLabel="5分钟" />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "退避队列" }));
+
+    expectInDocument(
+      screen.getByRole("button", { name: zhCN.retryQueue.retryAria("CB-9") }),
+    );
+  });
+
+  it("switches to the analytics view from the sidebar", async () => {
+    const { fetchMock, restore } = installFetchMock(() =>
+      new Response(JSON.stringify({ error: "history disabled" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    try {
+      render(
+        <TooltipProvider>
+          <AppLayout
+            state={makeState()}
+            connected={true}
+            runtimeLabel="5分钟"
+          />
+        </TooltipProvider>,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: "分析" }));
+
+      expectInDocument(
+        screen.getByRole("heading", { name: zhCN.analytics.title }),
+      );
+      await waitFor(() => {
+        expectInDocument(screen.getByText(zhCN.analytics.unavailable));
+      });
+      expect(fetchMock).toHaveBeenCalledWith("/api/v1/analytics");
+      expect(screen.queryByText("暂无运行中任务")).toBeNull();
+    } finally {
+      restore();
+    }
+  });
+
+  it("surfaces the dispatch pause control from the state snapshot", () => {
+    render(
+      <TooltipProvider>
+        <AppLayout
+          state={{ ...makeState(), dispatch_paused: true }}
+          connected={true}
+          runtimeLabel="5分钟"
+        />
+      </TooltipProvider>,
+    );
+
+    expectInDocument(screen.getByText(zhCN.dispatch.pausedBadge));
+    expectInDocument(
+      screen.getByRole("button", { name: zhCN.dispatch.resume }),
+    );
+  });
+
+  it("shows the pause action when dispatch is running", () => {
+    render(
+      <TooltipProvider>
+        <AppLayout
+          state={{ ...makeState(), dispatch_paused: false }}
+          connected={true}
+          runtimeLabel="5分钟"
+        />
+      </TooltipProvider>,
+    );
+
+    expectInDocument(
+      screen.getByRole("button", { name: zhCN.dispatch.pause }),
+    );
+    expect(screen.queryByText(zhCN.dispatch.pausedBadge)).toBeNull();
   });
 });

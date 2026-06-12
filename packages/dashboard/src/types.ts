@@ -236,6 +236,26 @@ export interface StateSnapshot {
   generated_at: string;
   build_info?: BuildInfo;
   runtime?: RuntimeConfig;
+  dispatch_paused?: boolean;
+}
+
+export interface AgentAnalytics {
+  runs: number;
+  succeeded: number;
+  failed: number;
+  tokens_in: number;
+  tokens_out: number;
+  avg_duration_ms: number;
+}
+export interface AnalyticsSnapshot {
+  total_runs: number;
+  succeeded: number;
+  failed: number;
+  tokens_in: number;
+  tokens_out: number;
+  avg_duration_ms: number;
+  by_agent: Record<string, AgentAnalytics>;
+  generated_at: string;
 }
 
 export interface TeamPhaseState {

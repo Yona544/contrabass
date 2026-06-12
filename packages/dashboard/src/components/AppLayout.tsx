@@ -15,10 +15,14 @@ import type {
   StateSnapshot,
 } from "../types";
 import type { QueueEventPayload } from "../hooks/useSSE";
+import { zhCN } from "../i18n/messages";
+import { AnalyticsView } from "./AnalyticsView";
 import { AppSidebar, type QueueId, type ViewId } from "./AppSidebar";
+import { DispatchControl } from "./DispatchControl";
 import { IssueDataTable } from "./IssueDataTable";
 import { IssueDetailSheet } from "./IssueDetailSheet";
 import { QueuePanel } from "./QueuePanel";
+import { RetryQueue } from "./RetryQueue";
 import { RuntimeSettings } from "./RuntimeSettings";
 
 interface AppLayoutProps {
@@ -195,7 +199,8 @@ export function AppLayout({
     if (sheetData) lastKnownSheetRef.current = sheetData;
   }, [sheetData]);
 
-  const activeQueueId = active === "settings" ? null : active;
+  const activeQueueId =
+    active === "settings" || active === "analytics" ? null : active;
   const currentQueue = activeQueueId ? queues[activeQueueId] : null;
   const queuedTotal =
     (counts.backoff ?? 0) + (counts.todo ?? 0) + (counts.backlog ?? 0);
@@ -225,15 +230,19 @@ export function AppLayout({
               Control Queue
             </p>
             <h2 className="truncate text-lg font-semibold leading-tight text-foreground">
-              {currentQueue?.title ?? "运行设置"}
+              {currentQueue?.title ??
+                (active === "analytics" ? zhCN.analytics.title : "运行设置")}
             </h2>
           </div>
+          <div className="ml-auto">
+            <DispatchControl paused={state.dispatch_paused ?? false} />
+          </div>
           {currentQueue ? (
-            <span className="ml-auto rounded-full border border-border/70 bg-card px-3 py-1 text-xs font-medium text-muted-foreground shadow-xs">
+            <span className="rounded-full border border-border/70 bg-card px-3 py-1 text-xs font-medium text-muted-foreground shadow-xs">
               {currentQueue.rows.length} 项
             </span>
           ) : (
-            <span className="ml-auto rounded-full border border-border/70 bg-card px-3 py-1 text-xs font-medium text-muted-foreground shadow-xs">
+            <span className="rounded-full border border-border/70 bg-card px-3 py-1 text-xs font-medium text-muted-foreground shadow-xs">
               只读
             </span>
           )}
@@ -273,6 +282,11 @@ export function AppLayout({
 
                 <QueuePanel events={queueEvents} />
 
+                {currentQueue.id === "backoff" &&
+                (state.backoff?.length ?? 0) > 0 ? (
+                  <RetryQueue entries={state.backoff ?? []} />
+                ) : null}
+
                 <section className="min-h-0 flex-1 overflow-hidden rounded-2xl border border-border/70 bg-card/80 shadow-lg ring-1 ring-white/5">
                   <IssueDataTable
                     entries={currentQueue.rows}
@@ -287,6 +301,8 @@ export function AppLayout({
                   />
                 </section>
               </>
+            ) : active === "analytics" ? (
+              <AnalyticsView />
             ) : (
               <RuntimeSettings
                 state={state}
