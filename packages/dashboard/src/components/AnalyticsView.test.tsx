@@ -38,6 +38,8 @@ function analyticsPayload(): AnalyticsSnapshot {
     tokens_in: 1234,
     tokens_out: 567,
     avg_duration_ms: 65000,
+    cost_usd: 12.345,
+    unpriced_runs: 2,
     by_agent: {
       claude: {
         runs: 6,
@@ -46,6 +48,7 @@ function analyticsPayload(): AnalyticsSnapshot {
         tokens_in: 1000,
         tokens_out: 400,
         avg_duration_ms: 60000,
+        cost_usd: 8.5,
       },
       codex: {
         runs: 4,
@@ -54,6 +57,7 @@ function analyticsPayload(): AnalyticsSnapshot {
         tokens_in: 234,
         tokens_out: 167,
         avg_duration_ms: 72500,
+        cost_usd: 3.845,
       },
     },
     generated_at: "2026-06-12T08:00:00Z",
@@ -83,6 +87,8 @@ describe("AnalyticsView", () => {
       expectInDocument(screen.getByText("80%"));
       expectInDocument(screen.getByText("1,234 输入 / 567 输出"));
       expectInDocument(screen.getByText("1分 5秒"));
+      expectInDocument(screen.getByText("$12.35"));
+      expectInDocument(screen.getByText(zhCN.analytics.costUnpriced(2)));
 
       // Per-agent table
       expectInDocument(screen.getByRole("table"));
@@ -93,6 +99,9 @@ describe("AnalyticsView", () => {
       expectInDocument(screen.getByText("50%"));
       expectInDocument(screen.getByText("1分 0秒"));
       expectInDocument(screen.getByText("1分 13秒"));
+      expectInDocument(screen.getByText(zhCN.analytics.headers.cost));
+      expectInDocument(screen.getByText("$8.50"));
+      expectInDocument(screen.getByText("$3.85"));
 
       expect(fetchMock).toHaveBeenCalledWith("/api/v1/analytics");
     } finally {
@@ -143,6 +152,8 @@ describe("AnalyticsView", () => {
         total_runs: 0,
         succeeded: 0,
         failed: 0,
+        cost_usd: 0,
+        unpriced_runs: 0,
         by_agent: {},
       }),
     );
@@ -154,6 +165,9 @@ describe("AnalyticsView", () => {
         expectInDocument(screen.getByText(zhCN.analytics.empty));
       });
       expect(screen.queryByRole("table")).toBeNull();
+      // No unpriced note when every run is priced.
+      expect(screen.queryByText(/未定价/)).toBeNull();
+      expectInDocument(screen.getByText("$0.00"));
     } finally {
       restore();
     }

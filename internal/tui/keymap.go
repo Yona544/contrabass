@@ -11,6 +11,7 @@ type ViewMode int
 const (
 	ViewOverview ViewMode = iota
 	ViewDetail
+	ViewTranscript
 )
 
 // FocusedPanel tracks which table panel the cursor is in.
@@ -23,18 +24,20 @@ const (
 )
 
 type KeyMap struct {
-	Quit     key.Binding
-	Up       key.Binding
-	Down     key.Binding
-	PageUp   key.Binding
-	PageDown key.Binding
-	Home     key.Binding
-	End      key.Binding
-	Help     key.Binding
-	Enter    key.Binding
-	Back     key.Binding
-	Tab      key.Binding
-	viewMode ViewMode
+	Quit       key.Binding
+	Up         key.Binding
+	Down       key.Binding
+	PageUp     key.Binding
+	PageDown   key.Binding
+	Home       key.Binding
+	End        key.Binding
+	Help       key.Binding
+	Enter      key.Binding
+	Back       key.Binding
+	Tab        key.Binding
+	Transcript key.Binding
+	OpenEditor key.Binding
+	viewMode   ViewMode
 }
 
 func NewKeyMap() KeyMap {
@@ -83,6 +86,14 @@ func NewKeyMap() KeyMap {
 			key.WithKeys("tab"),
 			key.WithHelp("⇥", "next panel"),
 		),
+		Transcript: key.NewBinding(
+			key.WithKeys("t"),
+			key.WithHelp("t", "transcript"),
+		),
+		OpenEditor: key.NewBinding(
+			key.WithKeys("o"),
+			key.WithHelp("o", "editor"),
+		),
 	}
 }
 
@@ -92,16 +103,21 @@ func (k KeyMap) SetViewMode(vm ViewMode) KeyMap {
 }
 
 func (k KeyMap) ShortHelp() []key.Binding {
-	if k.viewMode == ViewDetail {
+	switch k.viewMode {
+	case ViewDetail:
 		return []key.Binding{k.Up, k.Down, k.Back, k.Help, k.Quit}
+	case ViewTranscript:
+		return []key.Binding{k.Up, k.Down, k.Transcript, k.Back, k.Quit}
+	default:
+		return []key.Binding{k.Up, k.Down, k.Enter, k.Transcript, k.OpenEditor, k.Tab, k.Help, k.Quit}
 	}
-	return []key.Binding{k.Up, k.Down, k.Enter, k.Tab, k.Help, k.Quit}
 }
 
 func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.PageUp, k.PageDown, k.Home, k.End},
 		{k.Enter, k.Back, k.Tab},
+		{k.Transcript, k.OpenEditor},
 		{k.Help, k.Quit},
 	}
 }

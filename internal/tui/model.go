@@ -37,19 +37,23 @@ type Model struct {
 	viewMode     ViewMode
 	focusedPanel FocusedPanel
 
-	imageDirty     bool
-	agents         map[string]AgentRow
-	agentStartTime map[string]time.Time
-	agentEvents    map[string]*EventLog
-	backoffs       map[string]BackoffRow
-	backoffRetryAt map[string]time.Time
-	teams          map[string]TeamRow
-	teamStartTime  map[string]time.Time
-	teamWorkers    map[string][]TeamWorkerRow
-	teamEvents     map[string]*EventLog
-	stats          HeaderData
-	startTime      time.Time
-	unknownEvents  int
+	imageDirty       bool
+	agents           map[string]AgentRow
+	agentStartTime   map[string]time.Time
+	agentEvents      map[string]*EventLog
+	agentTranscripts map[string]*TranscriptBuffer
+	agentWorkspaces  map[string]string
+	statusMessage    string
+	statusExpires    time.Time
+	backoffs         map[string]BackoffRow
+	backoffRetryAt   map[string]time.Time
+	teams            map[string]TeamRow
+	teamStartTime    map[string]time.Time
+	teamWorkers      map[string][]TeamWorkerRow
+	teamEvents       map[string]*EventLog
+	stats            HeaderData
+	startTime        time.Time
+	unknownEvents    int
 
 	agentSortDirty   bool
 	backoffSortDirty bool
@@ -74,25 +78,27 @@ func NewModel() Model {
 		spinner.WithSpinner(spinner.Dot),
 	)
 	return Model{
-		header:         NewHeader(),
-		table:          NewTable(),
-		backoff:        NewBackoff(),
-		teamTable:      NewTeamTable(),
-		detailView:     NewDetailView(),
-		viewport:       vp,
-		keys:           NewKeyMap(),
-		spinner:        s,
-		help:           help.New(),
-		agents:         make(map[string]AgentRow),
-		agentStartTime: make(map[string]time.Time),
-		agentEvents:    make(map[string]*EventLog),
-		backoffs:       make(map[string]BackoffRow),
-		backoffRetryAt: make(map[string]time.Time),
-		teams:          make(map[string]TeamRow),
-		teamStartTime:  make(map[string]time.Time),
-		teamWorkers:    make(map[string][]TeamWorkerRow),
-		teamEvents:     make(map[string]*EventLog),
-		startTime:      now,
+		header:           NewHeader(),
+		table:            NewTable(),
+		backoff:          NewBackoff(),
+		teamTable:        NewTeamTable(),
+		detailView:       NewDetailView(),
+		viewport:         vp,
+		keys:             NewKeyMap(),
+		spinner:          s,
+		help:             help.New(),
+		agents:           make(map[string]AgentRow),
+		agentStartTime:   make(map[string]time.Time),
+		agentEvents:      make(map[string]*EventLog),
+		agentTranscripts: make(map[string]*TranscriptBuffer),
+		agentWorkspaces:  make(map[string]string),
+		backoffs:         make(map[string]BackoffRow),
+		backoffRetryAt:   make(map[string]time.Time),
+		teams:            make(map[string]TeamRow),
+		teamStartTime:    make(map[string]time.Time),
+		teamWorkers:      make(map[string][]TeamWorkerRow),
+		teamEvents:       make(map[string]*EventLog),
+		startTime:        now,
 		stats: HeaderData{
 			RefreshIn: 1,
 		},
@@ -123,7 +129,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.Back):
-			if m.viewMode == ViewDetail {
+			if m.viewMode == ViewDetail || m.viewMode == ViewTranscript {
 				m.viewMode = ViewOverview
 				needsSync = true
 			}
@@ -132,6 +138,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.viewMode = ViewDetail
 				needsSync = true
 			}
+		case key.Matches(msg, m.keys.Transcript):
+			switch m.viewMode {
+			case ViewTranscript:
+				m.viewMode = ViewOverview
+				needsSync = true
+			case ViewOverview:
+				if m.selectedIssueID() != "" {
+					m.viewMode = ViewTranscript
+					needsSync = true
+				}
+			}
+		case key.Matches(msg, m.keys.OpenEditor):
+			m = m.openWorkspaceInEditor()
+			needsSync = true
 		case key.Matches(msg, m.keys.Tab):
 			if m.viewMode == ViewOverview {
 				m = m.cyclePanel()
@@ -191,6 +211,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		needsSync = true
 	case tickMsg:
 		m = m.refreshDerivedFields(time.Time(msg))
+		if m.statusMessage != "" && time.Time(msg).After(m.statusExpires) {
+			m.statusMessage = ""
+		}
 		cmds := []tea.Cmd{doTick()}
 		needsSync = true
 		if m.imageDirty {
@@ -212,13 +235,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) View() tea.View {
+	footer := m.help.View(m.keys)
+	if m.statusMessage != "" {
+		footer = m.renderStatusLine()
+	}
 	rendered := lipgloss.JoinVertical(
 		lipgloss.Left,
 		m.header.View(),
 		m.viewport.View(),
-		m.help.View(m.keys),
+		footer,
 	)
 	return tea.NewView(rendered)
+}
+
+// renderStatusLine renders the transient one-line status message that
+// temporarily replaces the help line in the footer.
+func (m Model) renderStatusLine() string {
+	line := "  " + m.statusMessage
+	if m.width > 0 {
+		if runes := []rune(line); len(runes) > m.width {
+			line = string(runes[:m.width-1]) + "…"
+		}
+	}
+	return lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Render(line)
 }
 
 func (m Model) cyclePanel() Model {
@@ -428,6 +467,9 @@ func (m Model) applyOrchestratorEvent(event orchestrator.OrchestratorEvent) Mode
 				m.agentEvents[event.IssueID] = NewEventLog(defaultEventLogSize)
 			}
 			m.pushAgentEvent(event.IssueID, event.Timestamp, event.Type.String(), fmt.Sprintf("PID=%d attempt=%d", started.PID, started.Attempt))
+			if started.Workspace != "" {
+				m.agentWorkspaces[event.IssueID] = started.Workspace
+			}
 			m.agentStartTime[event.IssueID] = event.Timestamp
 			m.agents[event.IssueID] = AgentRow{
 				IssueID:   displayID,
@@ -463,11 +505,23 @@ func (m Model) applyOrchestratorEvent(event orchestrator.OrchestratorEvent) Mode
 			delete(m.agents, event.IssueID)
 			delete(m.agentStartTime, event.IssueID)
 			delete(m.agentEvents, event.IssueID)
+			delete(m.agentTranscripts, event.IssueID)
+			delete(m.agentWorkspaces, event.IssueID)
 			m.agentSortDirty = true
 			m.agentRowsDirty = true
 		default:
 			log.Warn("event payload type mismatch",
 				"expected", "AgentFinished",
+				"event_type", event.Type.String(),
+				"issue_id", event.IssueID)
+		}
+	case orchestrator.EventAgentTranscript:
+		switch transcript := event.Data.(type) {
+		case orchestrator.AgentTranscript:
+			m.pushTranscript(event.IssueID, transcript.Text)
+		default:
+			log.Warn("event payload type mismatch",
+				"expected", "AgentTranscript",
 				"event_type", event.Type.String(),
 				"issue_id", event.IssueID)
 		}
@@ -501,6 +555,8 @@ func (m Model) applyOrchestratorEvent(event orchestrator.OrchestratorEvent) Mode
 			delete(m.agents, event.IssueID)
 			delete(m.agentStartTime, event.IssueID)
 			delete(m.agentEvents, event.IssueID)
+			delete(m.agentTranscripts, event.IssueID)
+			delete(m.agentWorkspaces, event.IssueID)
 			delete(m.backoffs, event.IssueID)
 			delete(m.backoffRetryAt, event.IssueID)
 			if hadAgent {
@@ -584,6 +640,8 @@ func (m Model) syncTables() Model {
 
 	if m.viewMode == ViewDetail {
 		m.viewport.SetContent(m.renderDetailContent())
+	} else if m.viewMode == ViewTranscript {
+		m.viewport.SetContent(m.renderTranscriptContent())
 	} else {
 		content := m.table.View()
 		if bv := m.backoff.View(); bv != "" {
@@ -625,6 +683,22 @@ func (m Model) renderDetailContent() string {
 	default:
 		return lipgloss.NewStyle().Faint(true).Render("  No detail available")
 	}
+}
+
+func (m Model) renderTranscriptContent() string {
+	issueID := m.selectedIssueID()
+	if issueID == "" {
+		return lipgloss.NewStyle().Faint(true).Render("  No running issue selected")
+	}
+	var fragments []string
+	if buf, ok := m.agentTranscripts[issueID]; ok {
+		fragments = buf.Fragments()
+	}
+	maxBodyLines := m.viewport.Height() - 4
+	if maxBodyLines <= 0 {
+		maxBodyLines = 20
+	}
+	return renderTranscriptPane(m.width, maxBodyLines, issueID, fragments)
 }
 
 func (m *Model) sortedAgentRows() []AgentRow {
@@ -827,6 +901,18 @@ func (m *Model) pushAgentEvent(issueID string, ts time.Time, eventType, detail s
 		m.agentEvents[issueID] = log
 	}
 	log.Push(EventLogEntry{Timestamp: ts, Type: eventType, Detail: detail})
+}
+
+func (m *Model) pushTranscript(issueID, text string) {
+	if text == "" {
+		return
+	}
+	buf, ok := m.agentTranscripts[issueID]
+	if !ok {
+		buf = NewTranscriptBuffer(defaultTranscriptSize)
+		m.agentTranscripts[issueID] = buf
+	}
+	buf.Push(text)
 }
 
 func (m *Model) pushTeamEvent(teamName string, ts time.Time, eventType, detail string) {

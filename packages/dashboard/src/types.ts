@@ -246,6 +246,7 @@ export interface AgentAnalytics {
   tokens_in: number;
   tokens_out: number;
   avg_duration_ms: number;
+  cost_usd: number;
 }
 export interface AnalyticsSnapshot {
   total_runs: number;
@@ -254,6 +255,8 @@ export interface AnalyticsSnapshot {
   tokens_in: number;
   tokens_out: number;
   avg_duration_ms: number;
+  cost_usd: number;
+  unpriced_runs: number;
   by_agent: Record<string, AgentAnalytics>;
   generated_at: string;
 }

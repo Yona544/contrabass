@@ -33,6 +33,10 @@ function avgDurationLabel(avgDurationMs: number): string {
   return formatDuration(Math.round(avgDurationMs / 1000));
 }
 
+function costLabel(costUsd: number): string {
+  return `$${costUsd.toFixed(2)}`;
+}
+
 export function AnalyticsView({ refreshMs = 5000 }: AnalyticsViewProps) {
   const [data, setData] = useState<AnalyticsSnapshot | null>(null);
   const [status, setStatus] = useState<Status>("loading");
@@ -120,7 +124,7 @@ export function AnalyticsView({ refreshMs = 5000 }: AnalyticsViewProps) {
         ) : null}
 
         <section
-          className="grid grid-cols-2 gap-3 lg:grid-cols-4"
+          className="grid grid-cols-2 gap-3 lg:grid-cols-5"
           aria-label={zhCN.analytics.ariaLabel}
         >
           <SummaryCard
@@ -142,6 +146,15 @@ export function AnalyticsView({ refreshMs = 5000 }: AnalyticsViewProps) {
           <SummaryCard
             label={zhCN.analytics.cards.avgDuration}
             value={avgDurationLabel(data.avg_duration_ms)}
+          />
+          <SummaryCard
+            label={zhCN.analytics.cards.cost}
+            value={costLabel(data.cost_usd)}
+            subtle={
+              data.unpriced_runs > 0
+                ? zhCN.analytics.costUnpriced(data.unpriced_runs)
+                : undefined
+            }
           />
         </section>
 
@@ -176,6 +189,9 @@ export function AnalyticsView({ refreshMs = 5000 }: AnalyticsViewProps) {
                   <TableHead className="text-right">
                     {zhCN.analytics.headers.tokensOut}
                   </TableHead>
+                  <TableHead className="text-right">
+                    {zhCN.analytics.headers.cost}
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -208,6 +224,9 @@ export function AnalyticsView({ refreshMs = 5000 }: AnalyticsViewProps) {
                     </TableCell>
                     <TableCell className="text-right font-mono text-xs tabular-nums">
                       {formatCompactNumber(agent.tokens_out)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-xs tabular-nums">
+                      {costLabel(agent.cost_usd)}
                     </TableCell>
                   </TableRow>
                 ))}

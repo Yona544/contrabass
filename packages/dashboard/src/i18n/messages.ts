@@ -88,11 +88,13 @@ export const zhCN = {
     unavailableHint: "启用历史记录后即可查看运行分析",
     empty: "暂无运行记录",
     loadFailed: (error: string) => `分析加载失败：${error}`,
+    costUnpriced: (count: number) => `含 ${count} 次未定价运行`,
     cards: {
       totalRuns: "总运行数",
       successRate: "成功率",
       tokens: "Token 用量",
       avgDuration: "平均耗时",
+      cost: "成本 (USD)",
     },
     headers: {
       agentType: "代理类型",
@@ -103,6 +105,7 @@ export const zhCN = {
       avgDuration: "平均耗时",
       tokensIn: "输入 Token",
       tokensOut: "输出 Token",
+      cost: "成本",
     },
   },
   rateLimits: {
