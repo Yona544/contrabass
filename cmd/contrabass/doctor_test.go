@@ -41,7 +41,7 @@ Local operator workflow.
 	restoreDoctorTestHooks(t)
 	doctorLookPath = func(name string) (string, error) {
 		switch name {
-		case "git", "go", "node", "bun", "codex":
+		case "git", "go", "node", "bun", "codex", "tmux":
 			return name, nil
 		default:
 			return "", exec.ErrNotFound
@@ -121,7 +121,7 @@ Local operator workflow.
 	restoreDoctorTestHooks(t)
 	doctorLookPath = func(name string) (string, error) {
 		switch name {
-		case "git", "go", "node", "bun", "codex":
+		case "git", "go", "node", "bun", "codex", "tmux":
 			return name, nil
 		default:
 			return "", exec.ErrNotFound
@@ -166,7 +166,7 @@ Local operator workflow.
 	restoreDoctorTestHooks(t)
 	doctorLookPath = func(name string) (string, error) {
 		switch name {
-		case "git", "go", "node", "bun":
+		case "git", "go", "node", "bun", "tmux":
 			return name, nil
 		default:
 			return "", exec.ErrNotFound
@@ -214,7 +214,7 @@ Local operator workflow.
 	restoreDoctorTestHooks(t)
 	doctorLookPath = func(name string) (string, error) {
 		switch name {
-		case "git", "go", "node", "bun", "codex":
+		case "git", "go", "node", "bun", "codex", "tmux":
 			return name, nil
 		default:
 			return "", exec.ErrNotFound
@@ -253,7 +253,7 @@ Local operator workflow.
 	restoreDoctorTestHooks(t)
 	doctorLookPath = func(name string) (string, error) {
 		switch name {
-		case "git", "go", "node", "bun", "codex":
+		case "git", "go", "node", "bun", "codex", "tmux":
 			return name, nil
 		default:
 			return "", exec.ErrNotFound
@@ -303,7 +303,7 @@ Local operator workflow.
 	restoreDoctorTestHooks(t)
 	doctorLookPath = func(name string) (string, error) {
 		switch name {
-		case "git", "go", "node", "bun", "codex":
+		case "git", "go", "node", "bun", "codex", "tmux":
 			return name, nil
 		default:
 			return "", exec.ErrNotFound
@@ -361,7 +361,7 @@ Local operator workflow.
 	}
 	doctorLookPath = func(name string) (string, error) {
 		switch name {
-		case "git", "go", "node", "codex":
+		case "git", "go", "node", "codex", "tmux":
 			return name, nil
 		case "bun":
 			return "", exec.ErrNotFound
@@ -631,7 +631,7 @@ Prompt.
 	restoreDoctorTestHooks(t)
 	doctorLookPath = func(name string) (string, error) {
 		switch name {
-		case "git", "go", "node", "bun", "codex":
+		case "git", "go", "node", "bun", "codex", "tmux":
 			return name, nil
 		default:
 			return "", exec.ErrNotFound

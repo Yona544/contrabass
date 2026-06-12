@@ -20,13 +20,15 @@ import (
 
 const workerHeartbeatInterval = 5 * time.Second
 
-var teamWorkerCmd = &cobra.Command{
-	Use:   "worker",
-	Short: "Run as a team worker in a tmux pane",
-	RunE:  runTeamWorker,
-}
+// newTeamWorkerCmd builds the worker subcommand fresh per team command tree
+// (see newTeamCmd for why these are not package globals).
+func newTeamWorkerCmd() *cobra.Command {
+	teamWorkerCmd := &cobra.Command{
+		Use:   "worker",
+		Short: "Run as a team worker in a tmux pane",
+		RunE:  runTeamWorker,
+	}
 
-func init() {
 	teamWorkerCmd.Flags().StringP("config", "c", "", "path to WORKFLOW.md file (required)")
 	teamWorkerCmd.Flags().StringP("name", "n", "", "team name (required)")
 	teamWorkerCmd.Flags().String("worker-id", "", "worker ID (required)")
@@ -36,7 +38,7 @@ func init() {
 	_ = teamWorkerCmd.MarkFlagRequired("name")
 	_ = teamWorkerCmd.MarkFlagRequired("worker-id")
 
-	teamCmd.AddCommand(teamWorkerCmd)
+	return teamWorkerCmd
 }
 
 func runTeamWorker(cmd *cobra.Command, args []string) error {

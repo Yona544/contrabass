@@ -23,28 +23,52 @@ import (
 	"github.com/junhoyeo/contrabass/internal/workspace"
 )
 
-var teamCmd = &cobra.Command{
-	Use:   "team",
-	Short: "Manage coordinated agent teams",
-	Long:  "Manage coordinated agent teams executing staged pipelines",
-}
+// newTeamCmd builds the team command tree. Constructed per call (not shared
+// package globals) because cobra's AddCommand mutates the child's parent
+// pointer — a shared instance races when tests build multiple root commands
+// concurrently.
+func newTeamCmd() *cobra.Command {
+	teamCmd := &cobra.Command{
+		Use:   "team",
+		Short: "Manage coordinated agent teams",
+		Long:  "Manage coordinated agent teams executing staged pipelines",
+	}
 
-var teamRunCmd = &cobra.Command{
-	Use:   "run",
-	Short: "Run a team with the staged pipeline",
-	RunE:  runTeam,
-}
+	teamRunCmd := &cobra.Command{
+		Use:   "run",
+		Short: "Run a team with the staged pipeline",
+		RunE:  runTeam,
+	}
+	teamRunCmd.Flags().StringP("config", "c", "", "path to WORKFLOW.md file (required)")
+	teamRunCmd.Flags().StringP("name", "n", "", "team name (required unless --issue is set)")
+	teamRunCmd.Flags().StringP("tasks", "t", "", "path to tasks JSON file (required unless --issue is set)")
+	teamRunCmd.Flags().String("issue", "", "internal board issue ID to hydrate into a team run")
+	teamRunCmd.Flags().IntP("max-workers", "w", 0, "override max workers from config")
+	teamRunCmd.Flags().String("worker-mode", "", "override worker mode from config (goroutine|tmux)")
+	_ = teamRunCmd.MarkFlagRequired("config")
 
-var teamStatusCmd = &cobra.Command{
-	Use:   "status",
-	Short: "Show team status",
-	RunE:  showTeamStatus,
-}
+	teamStatusCmd := &cobra.Command{
+		Use:   "status",
+		Short: "Show team status",
+		RunE:  showTeamStatus,
+	}
+	teamStatusCmd.Flags().StringP("config", "c", "", "path to WORKFLOW.md file (required)")
+	teamStatusCmd.Flags().StringP("name", "n", "", "team name (required)")
+	_ = teamStatusCmd.MarkFlagRequired("config")
+	_ = teamStatusCmd.MarkFlagRequired("name")
 
-var teamCancelCmd = &cobra.Command{
-	Use:   "cancel",
-	Short: "Cancel a running team",
-	RunE:  cancelTeam,
+	teamCancelCmd := &cobra.Command{
+		Use:   "cancel",
+		Short: "Cancel a running team",
+		RunE:  cancelTeam,
+	}
+	teamCancelCmd.Flags().StringP("config", "c", "", "path to WORKFLOW.md file (required)")
+	teamCancelCmd.Flags().StringP("name", "n", "", "team name (required)")
+	_ = teamCancelCmd.MarkFlagRequired("config")
+	_ = teamCancelCmd.MarkFlagRequired("name")
+
+	teamCmd.AddCommand(teamRunCmd, teamStatusCmd, teamCancelCmd, newTeamWorkerCmd())
+	return teamCmd
 }
 
 type teamRunOptions struct {
@@ -60,37 +84,6 @@ type teamRunHooks struct {
 	ParentContext        context.Context
 	EventHandlers        []teamEventHandler
 	DisableSignalHandler bool
-}
-
-func init() {
-	// teamRunCmd flags
-	teamRunCmd.Flags().StringP("config", "c", "", "path to WORKFLOW.md file (required)")
-	teamRunCmd.Flags().StringP("name", "n", "", "team name (required unless --issue is set)")
-	teamRunCmd.Flags().StringP("tasks", "t", "", "path to tasks JSON file (required unless --issue is set)")
-	teamRunCmd.Flags().String("issue", "", "internal board issue ID to hydrate into a team run")
-	teamRunCmd.Flags().IntP("max-workers", "w", 0, "override max workers from config")
-	teamRunCmd.Flags().String("worker-mode", "", "override worker mode from config (goroutine|tmux)")
-
-	_ = teamRunCmd.MarkFlagRequired("config")
-
-	// teamStatusCmd flags
-	teamStatusCmd.Flags().StringP("config", "c", "", "path to WORKFLOW.md file (required)")
-	teamStatusCmd.Flags().StringP("name", "n", "", "team name (required)")
-
-	_ = teamStatusCmd.MarkFlagRequired("config")
-	_ = teamStatusCmd.MarkFlagRequired("name")
-
-	// teamCancelCmd flags
-	teamCancelCmd.Flags().StringP("config", "c", "", "path to WORKFLOW.md file (required)")
-	teamCancelCmd.Flags().StringP("name", "n", "", "team name (required)")
-
-	_ = teamCancelCmd.MarkFlagRequired("config")
-	_ = teamCancelCmd.MarkFlagRequired("name")
-
-	// Add subcommands to teamCmd
-	teamCmd.AddCommand(teamRunCmd)
-	teamCmd.AddCommand(teamStatusCmd)
-	teamCmd.AddCommand(teamCancelCmd)
 }
 
 func logTeamEvents(ctx context.Context, logger *slog.Logger, events <-chan types.TeamEvent) {
